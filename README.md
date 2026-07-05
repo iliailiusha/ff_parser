@@ -20,4 +20,5 @@ Telegram bot для поиска выгодных товаров на Goofish (�
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram бота |
 | `TELEGRAM_USER_ID` | ID пользователя Telegram |
+| `API_BASE_URL` | URL Vercel-прокси (если Telegram заблокирован) |
 | `CNY_TO_RUB` | Курс юаня к рублю (по умолчанию 12) |

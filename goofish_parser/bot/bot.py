@@ -5,7 +5,7 @@ from datetime import time
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from goofish_parser.config import TELEGRAM_BOT_TOKEN
+from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL
 from goofish_parser.bot.handlers import start, search_command, recent_command, help_command, rate_command
 from goofish_parser.services.exchange_rate import update_rate_daily
 
@@ -17,12 +17,24 @@ async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"Daily CNY rate update: {rate:.2f} RUB")
 
 
+def _build_app():
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+
+    if API_BASE_URL:
+        base = API_BASE_URL.rstrip("/")
+        builder.base_url(f"{base}/bot")
+        builder.base_file_url(f"{base}/file")
+        logger.info(f"Using Telegram proxy: {API_BASE_URL}")
+
+    return builder.build()
+
+
 def run_bot() -> None:
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set")
         return
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app = _build_app()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("search", search_command))

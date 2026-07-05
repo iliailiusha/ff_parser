@@ -14,6 +14,9 @@ TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID", "")
 CNY_TO_RUB_FALLBACK = float(os.getenv("CNY_TO_RUB", "12"))
 USD_TO_RUB = float(os.getenv("USD_TO_RUB", "85"))
 
+API_BASE_URL = os.getenv("API_BASE_URL", "")
+PROXY_URL = os.getenv("PROXY_URL") or None
+
 PROXY_HOST = os.getenv("PROXY_HOST", "")
 PROXY_USER = os.getenv("PROXY_USER", "")
 PROXY_PASS = os.getenv("PROXY_PASS", "")
