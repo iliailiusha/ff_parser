@@ -7,6 +7,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL
 from goofish_parser.bot.handlers import search_conversation, recent_command, help_command, rate_command
+from goofish_parser.bot.login_handler import login_command
 from goofish_parser.services.exchange_rate import update_rate_daily
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _set_commands(app: Application) -> None:
     await app.bot.set_my_commands([
         BotCommand("search", "🔍 Поиск товаров"),
+        BotCommand("login", "🔑 Войти в 闲鱼"),
         BotCommand("rate", "💱 Курс CNY/RUB"),
         BotCommand("recent", "🔥 Лучшие находки"),
         BotCommand("help", "📖 Справка"),
@@ -49,6 +51,7 @@ def run_bot() -> None:
     app = _build_app()
 
     app.add_handler(search_conversation())
+    app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("recent", recent_command))
     app.add_handler(CommandHandler("rate", rate_command))
     app.add_handler(CommandHandler("help", help_command))
