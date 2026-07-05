@@ -4,12 +4,22 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from goofish_parser.config import TELEGRAM_USER_ID
 from goofish_parser.bot.qr_login import get_qr_code, poll_login
+from goofish_parser.scraper.session import get_token
 
 logger = logging.getLogger(__name__)
 
 
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.effective_user.id)
+    if TELEGRAM_USER_ID and user_id != TELEGRAM_USER_ID:
+        await update.message.reply_text(
+            "❌ Только владелец бота может войти в 闲鱼.\n"
+            "Поиск работает для всех после авторизации."
+        )
+        return
+
     msg = await update.message.reply_text("🔄 Генерирую QR-код для входа в 闲鱼...")
 
     def _get_qr():

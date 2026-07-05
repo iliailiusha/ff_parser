@@ -15,6 +15,7 @@ from goofish_parser.bot.translation import CLOTHING_RU_TO_CN
 from goofish_parser.scraper.search import search_by_brand_type
 from goofish_parser.scraper.session import ensure_session
 from goofish_parser.services.exchange_rate import get_cny_to_rub, fetch_cny_rate
+from goofish_parser.scraper.session import get_token, load_cookies
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not get_token():
+        load_cookies()
+    if not get_token():
+        await update.message.reply_text(
+            "👋 Привет! Я бот для поиска выгодных товаров на Goofish (闲鱼).\n\n"
+            "⚠️ *Авторизация в Goofish ещё не выполнена.*\n"
+            "Владелец бота должен войти через `/login`.\n"
+            "После этого поиск будет доступен всем.",
+            parse_mode="Markdown",
+        )
+        return ConversationHandler.END
+
     welcome = (
         "👋 Привет! Я бот для поиска выгодных товаров на Goofish (闲鱼).\n\n"
         "Выбери бренд чтобы начать:"
@@ -194,6 +207,24 @@ async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    token = get_token()
+    if token:
+        await update.message.reply_text(
+            "✅ *Статус: авторизован*\n\n"
+            "Бот вошёл в Goofish (闲鱼) и может искать товары.\n"
+            "Используй /search чтобы начать.",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text(
+            "❌ *Статус: не авторизован*\n\n"
+            "Владелец бота должен войти через `/login`.\n"
+            "После этого поиск будет доступен всем.",
+            parse_mode="Markdown",
+        )
 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
