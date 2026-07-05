@@ -24,8 +24,8 @@ def _build_app():
         base = API_BASE_URL.strip().rstrip("/")
         if not base.startswith(("http://", "https://")):
             base = "https://" + base
-        builder.base_url(f"{base}/bot")
-        builder.base_file_url(f"{base}/file")
+        builder.base_url(f"{base}/api/bot")
+        builder.base_file_url(f"{base}/api/file")
         logger.info(f"Using Telegram proxy: {base}")
 
     return builder.build()
