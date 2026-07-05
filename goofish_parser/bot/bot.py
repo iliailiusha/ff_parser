@@ -21,10 +21,12 @@ def _build_app():
     builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
 
     if API_BASE_URL:
-        base = API_BASE_URL.rstrip("/")
+        base = API_BASE_URL.strip().rstrip("/")
+        if not base.startswith(("http://", "https://")):
+            base = "https://" + base
         builder.base_url(f"{base}/bot")
         builder.base_file_url(f"{base}/file")
-        logger.info(f"Using Telegram proxy: {API_BASE_URL}")
+        logger.info(f"Using Telegram proxy: {base}")
 
     return builder.build()
 
