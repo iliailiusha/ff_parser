@@ -2,11 +2,11 @@ import asyncio
 import logging
 from datetime import time
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL
-from goofish_parser.bot.handlers import start, search_conversation, recent_command, help_command, rate_command
+from goofish_parser.bot.handlers import search_conversation, recent_command, help_command, rate_command
 from goofish_parser.services.exchange_rate import update_rate_daily
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
     rate = update_rate_daily()
     logger.info(f"Daily CNY rate update: {rate:.2f} RUB")
+
+
+async def _set_commands(app: Application) -> None:
+    await app.bot.set_my_commands([
+        BotCommand("search", "🔍 Поиск товаров"),
+        BotCommand("rate", "💱 Курс CNY/RUB"),
+        BotCommand("recent", "🔥 Лучшие находки"),
+        BotCommand("help", "📖 Справка"),
+    ])
+    logger.info("Bot commands registered")
 
 
 def _build_app():
@@ -38,7 +48,6 @@ def run_bot() -> None:
 
     app = _build_app()
 
-    app.add_handler(CommandHandler("start", start))
     app.add_handler(search_conversation())
     app.add_handler(CommandHandler("recent", recent_command))
     app.add_handler(CommandHandler("rate", rate_command))
@@ -50,4 +59,9 @@ def run_bot() -> None:
         logger.info("Daily CNY rate update scheduled at 10:00 MSK")
 
     logger.info("Bot started")
+
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(_set_commands(app))
+    loop.close()
+
     app.run_polling(allowed_updates=Update.ALL_TYPES)

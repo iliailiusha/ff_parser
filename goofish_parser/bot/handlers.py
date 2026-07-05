@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from telegram import Update, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ContextTypes, ConversationHandler, CallbackQueryHandler,
     MessageHandler, filters, CommandHandler,
@@ -22,22 +22,17 @@ logger = logging.getLogger(__name__)
 BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX = range(5)
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from goofish_parser.bot.keyboards import build_brand_keyboard
-    await update.message.reply_text(
-        "👋 Привет! Я бот для поиска выгодных товаров на Goofish (闲鱼).\n\n"
-        "Нажми кнопку ниже чтобы начать поиск:",
-        reply_markup=build_brand_keyboard(),
-    )
-
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
 
 async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    welcome = (
+        "👋 Привет! Я бот для поиска выгодных товаров на Goofish (闲鱼).\n\n"
+        "Выбери бренд чтобы начать:"
+    )
     await update.message.reply_text(
-        "Выбери бренд:",
+        welcome,
         reply_markup=build_brand_keyboard(),
     )
     return BRAND_SELECT
@@ -218,7 +213,10 @@ async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def search_conversation() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[CommandHandler("search", search_start)],
+        entry_points=[
+            CommandHandler("search", search_start),
+            CommandHandler("start", search_start),
+        ],
         states={
             BRAND_SELECT: [CallbackQueryHandler(on_brand, pattern=r"^brand:")],
             TYPE_SELECT: [CallbackQueryHandler(on_type, pattern=r"^type:")],
