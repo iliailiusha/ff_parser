@@ -11,7 +11,7 @@ DATA_DIR.mkdir(exist_ok=True)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID", "")
 
-CNY_TO_RUB = float(os.getenv("CNY_TO_RUB", "12"))
+CNY_TO_RUB_FALLBACK = float(os.getenv("CNY_TO_RUB", "12"))
 USD_TO_RUB = float(os.getenv("USD_TO_RUB", "85"))
 
 PROXY_HOST = os.getenv("PROXY_HOST", "")

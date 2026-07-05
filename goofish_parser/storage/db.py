@@ -58,6 +58,12 @@ def init_db() -> None:
             sample_count INTEGER NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS rate_cache (
+            cache_key TEXT PRIMARY KEY,
+            avg_price REAL NOT NULL,
+            sample_count INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );
     """)
     conn.commit()
 
@@ -123,6 +129,26 @@ def set_price_cache(cache_key: str, avg_price: float, sample_count: int) -> None
         """INSERT OR REPLACE INTO price_cache (cache_key, avg_price, sample_count, updated_at)
            VALUES (?, ?, ?, ?)""",
         (cache_key, avg_price, sample_count, datetime.now().isoformat()),
+    )
+    conn.commit()
+
+
+def get_rate_cache(cache_key: str) -> Optional[tuple[str, float]]:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT updated_at, avg_price FROM rate_cache WHERE cache_key = ?",
+        (cache_key,),
+    ).fetchone()
+    if row:
+        return row["updated_at"][:10], row["avg_price"]
+    return None
+
+
+def set_rate_cache(cache_key: str, rate: float) -> None:
+    conn = _get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO rate_cache (cache_key, avg_price, sample_count, updated_at) VALUES (?, ?, 1, ?)",
+        (cache_key, rate, datetime.now().isoformat()),
     )
     conn.commit()
 

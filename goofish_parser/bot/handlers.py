@@ -9,6 +9,7 @@ from goofish_parser.analyzer.scoring import score_items
 from goofish_parser.bot.messages import format_search_result, HELP_TEXT
 from goofish_parser.scraper.search import search_by_brand_type
 from goofish_parser.scraper.session import ensure_session
+from goofish_parser.services.exchange_rate import get_cny_to_rub, fetch_cny_rate
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,21 @@ async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    rate = get_cny_to_rub()
+    fresh = fetch_cny_rate()
+    if fresh is not None and abs(fresh - rate) > 0.01:
+        rate = fresh
+
+    await update.message.reply_text(
+        f"💱 *Курс CNY/RUB*\n\n"
+        f"1 ¥ = *{rate:.2f} ₽*\n"
+        f"Источник: ЦБ РФ (cbr.ru)\n"
+        f"Обновляется ежедневно в 10:00 MSK",
+        parse_mode="Markdown",
+    )
 
 
 def _chunk_text(text: str, max_len: int) -> list[str]:
