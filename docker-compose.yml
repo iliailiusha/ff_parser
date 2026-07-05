@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: goofish-bot
+    restart: unless-stopped
+    env_file: ./goofish_parser/.env
+    volumes:
+      - bot_data:/app/goofish_parser/data
+
+volumes:
+  bot_data:

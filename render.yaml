@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: goofish-bot
+    env: python
+    buildCommand: pip install -r goofish_parser/requirements.txt && python -m playwright install chromium
+    startCommand: cd goofish_parser && python main.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_USER_ID
+        sync: false
+      - key: CNY_TO_RUB
+        value: "12"

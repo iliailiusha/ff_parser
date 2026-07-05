@@ -1,0 +1,150 @@
+import json
+import random
+from pathlib import Path
+from typing import Optional
+
+from playwright.async_api import async_playwright
+
+from goofish_parser.config import COOKIES_PATH, USER_AGENT, PROXY_HOST, PROXY_USER, PROXY_PASS
+
+_cookies: dict[str, str] = {}
+_token: str = ""
+_session_id: str = ""
+
+
+def generate_session_id() -> str:
+    return str(random.randint(100000, 999999))
+
+
+def get_proxy_url() -> Optional[str]:
+    if PROXY_HOST and PROXY_USER and PROXY_PASS:
+        return f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}"
+    return None
+
+
+def get_proxy_config() -> Optional[dict]:
+    if PROXY_HOST and PROXY_USER and PROXY_PASS:
+        return {
+            "server": f"http://{PROXY_HOST}",
+            "username": PROXY_USER,
+            "password": PROXY_PASS,
+        }
+    return None
+
+
+async def init_session() -> None:
+    global _cookies, _token, _session_id
+
+    _session_id = generate_session_id()
+    proxy = get_proxy_config()
+
+    playwright = await async_playwright().start()
+    browser = await playwright.chromium.launch(
+        headless=True,
+        proxy=proxy,
+    )
+    context = await browser.new_context(
+        user_agent=USER_AGENT,
+        viewport={"width": 1920, "height": 1080},
+        locale="zh-CN",
+    )
+
+    page = await context.new_page()
+    await page.goto(
+        "https://www.goofish.com/",
+        wait_until="domcontentloaded",
+        timeout=60000,
+    )
+    await page.wait_for_timeout(5000)
+
+    cookies = await context.cookies()
+    _cookies = {c["name"]: c["value"] for c in cookies}
+
+    h5_tk = _cookies.get("_m_h5_tk", "")
+    if "_" in h5_tk:
+        _token = h5_tk.split("_")[0]
+        _cookies["_m_h5_tk_token"] = _token
+
+    _save_cookies()
+
+    await browser.close()
+    await playwright.stop()
+
+
+def _save_cookies() -> None:
+    COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COOKIES_PATH.write_text(
+        json.dumps(_cookies, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_cookies() -> dict[str, str]:
+    global _cookies, _token
+    if COOKIES_PATH.exists():
+        _cookies = json.loads(COOKIES_PATH.read_text(encoding="utf-8"))
+        _token = _cookies.get("_m_h5_tk_token", "")
+    return _cookies
+
+
+def get_cookies() -> dict[str, str]:
+    if not _cookies:
+        load_cookies()
+    return _cookies
+
+
+def get_token() -> str:
+    if not _token:
+        load_cookies()
+    return _token
+
+
+async def ensure_session() -> None:
+    if not get_token():
+        await init_session()
+
+
+async def search_page(
+    query: str,
+    limit: int = 30,
+) -> dict:
+    await ensure_session()
+
+    from goofish_parser.config import SEARCH_JS
+
+    proxy = get_proxy_config()
+    playwright = await async_playwright().start()
+    browser = await playwright.chromium.launch(
+        headless=True,
+        proxy=proxy,
+    )
+    context = await browser.new_context(
+        user_agent=USER_AGENT,
+        viewport={"width": 1920, "height": 1080},
+        locale="zh-CN",
+    )
+
+    await context.add_cookies([
+        {"name": k, "value": v, "domain": ".goofish.com", "path": "/"}
+        for k, v in get_cookies().items()
+        if k != "_m_h5_tk_token"
+    ])
+
+    page = await context.new_page()
+    from urllib.parse import quote
+    url = f"https://www.goofish.com/search?q={quote(query)}"
+
+    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    await page.wait_for_timeout(3000)
+
+    for _ in range(3):
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await page.wait_for_timeout(1000)
+    await page.evaluate("window.scrollTo(0, 0)")
+
+    result = await page.evaluate(SEARCH_JS, limit)
+
+    await browser.close()
+    await playwright.stop()
+
+    return result
