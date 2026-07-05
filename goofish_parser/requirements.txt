@@ -6,3 +6,4 @@ python-dotenv>=1.0
 pydantic>=2.0
 aiofiles>=23.0
 cachetools>=5.3
+qrcode[pil]>=7.4
