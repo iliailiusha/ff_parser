@@ -160,7 +160,7 @@ async def execute_search(
         scored = score_items(items, market)
 
         save_scored_items(scored)
-        result = format_search_result(scored, label, type_cn)
+        result = format_search_result(scored, brand, type_ru)
 
         for chunk in _chunk_text(result, 4000):
             try:
