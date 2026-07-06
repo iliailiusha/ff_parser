@@ -237,7 +237,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=200)
+        items = search_products_free_text(text, sort="NEW", limit=100)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",

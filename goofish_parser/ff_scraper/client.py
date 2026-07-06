@@ -123,10 +123,11 @@ def search_products(
     if not query_str:
         return []
 
+    safe_limit = min(limit, 100)
     variables = {
         "filter": {"query": query_str, "show_only": show_only},
         "sort": sort,
-        "limit": limit,
+        "limit": safe_limit,
     }
     if price_min is not None:
         variables["filter"]["price_min"] = price_min
