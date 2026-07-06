@@ -158,14 +158,32 @@ async def execute_search(
 
         save_scored_items(scored)
         text = format_search_result(scored, brand, type_ru)
+        chat_id = update.effective_chat.id
 
-        for chunk in _chunk_text(text, 4000):
-            try:
-                await msg.edit_text(chunk, parse_mode="Markdown")
-            except Exception:
-                msg = await update.effective_chat.send_message(chunk, parse_mode="Markdown")
-            if len(chunk) < len(text):
-                msg = await update.effective_chat.send_message("...")
+        # send summary text
+        if hasattr(msg, "edit_message_text"):
+            await msg.edit_message_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+        elif hasattr(msg, "edit_text"):
+            await msg.edit_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
+
+        # send photos for top 5 deals
+        rate = get_krw_to_rub()
+        for s in scored[:5]:
+            item = s.item
+            link = f"[🔍 Искать на FF](https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)})"
+            seller = f" | [👤 Продавец]({item.url})" if item.url != "https://fruitsfamily.com" else ""
+            caption = (
+                f"*{item.title}*\n"
+                f"💰 {item.price_cny:,.0f}₩ (~{round(item.price_cny * rate):.0f}₽)\n"
+                f"{link}{seller}"
+            )
+            if item.images:
+                try:
+                    await context.bot.send_photo(chat_id=chat_id, photo=item.images[0], caption=caption, parse_mode="Markdown")
+                except Exception:
+                    pass
 
     except Exception as e:
         logger.exception("Search error")
@@ -230,8 +248,20 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "items": items,
             "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
             "query": text,
+            "base_query": text,
+            "korean_query": None,
             "limit": 10,
+            "max_reached": False,
         }
+
+        # detect what the API was actually called with by checking if clothing was detected
+        import goofish_parser.ff_scraper.search as ff_search
+        cw = ff_search._find_clothing_keywords(text)
+        if cw:
+            ko_query = text
+            for w in cw:
+                ko_query = ko_query.replace(w, ff_search.CLOTHING_RU_TO_KO[w], 1)
+            context.user_data[key]["korean_query"] = ko_query
 
         await _show_find_page(update, context, msg, key, 0)
 
@@ -256,25 +286,39 @@ async def _show_find_page(
         return
 
     items = data["items"]
-    query = data["query"]
+    query = data.get("korean_query") or data["query"]
 
-    # Auto-load more when beyond loaded items
+    # Auto-load more when beyond loaded items (infinite, up to 1 week old)
     while True:
         start = page * FIND_ITEMS_PER_PAGE
         if start < len(items):
             break
+        if data.get("max_reached"):
+            break
         old_limit = data.get("limit", 10)
         new_limit = old_limit + 30
-        new_raw = search_products_free_text(query, sort="NEW", limit=new_limit, auto_detect_clothing=False)
+        new_raw = search_products_free_text(
+            query, sort="NEW", limit=new_limit, auto_detect_clothing=False,
+        )
         existing_ids = {i.item_id for i in items}
         new_count = 0
         for i in new_raw:
             if i.item_id not in existing_ids:
+                # skip items older than 1 week
+                if i.created_at:
+                    try:
+                        from datetime import timezone
+                        dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
+                        if (datetime.now(timezone.utc) - dt).days > 7:
+                            data["max_reached"] = True
+                            break
+                    except Exception:
+                        pass
                 items.append(i)
                 new_count += 1
         data["items"] = items
         data["limit"] = new_limit
-        if new_count == 0:
+        if new_count == 0 or data.get("max_reached"):
             break
 
     total = (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE
@@ -317,7 +361,8 @@ async def _show_find_page(
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
         brand_str = f"🏷 *{item.location}*\n" if item.location else ""
         search_link = f"https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)}"
-        seller_ref = f" | [👤 Продавец]({item.url})" if item.url != "https://fruitsfamily.com" else ""
+        sel_url = item.url if item.url and item.url not in ("https://fruitsfamily.com", "https://fruitsfamily.com/") else None
+        seller_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
         link_str = f"[🔍 Искать на FF]({search_link}){seller_ref}"
 
         caption = (
