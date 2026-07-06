@@ -148,3 +148,10 @@ async def search_by_brand_type(
         limit=limit,
     )
     return await search_items(criteria)
+
+
+def search_products_free_text(query: str, sort: str = "NEW", limit: int = 20) -> list[GoofishItem]:
+    items = search_products(query=query, sort=sort, limit=limit)
+    if not items:
+        return []
+    return [_ff_item_to_model(i) for i in items]
