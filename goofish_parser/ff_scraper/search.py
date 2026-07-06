@@ -92,18 +92,23 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
     like_count = raw.get("like_count") or 0
     discount_rate = raw.get("discount_rate")
     created_at = raw.get("createdAt") or ""
+    seller_info = raw.get("seller") or {}
+    seller_id = str(seller_info.get("id", "")) if isinstance(seller_info, dict) else ""
 
     ext_url = raw.get("external_url") or ""
     if ext_url.startswith("http"):
         url = ext_url
+    elif seller_id:
+        url = f"https://fruitsfamily.com/seller/{seller_id}"
     else:
-        url = f"https://fruitsfamily.com/products/{item_id}"
+        url = f"https://fruitsfamily.com"
 
     return GoofishItem(
         item_id=item_id,
         title=f"{title}",
         price_cny=price,
         url=url,
+        seller_id=seller_id,
         condition=condition or "",
         location=brand,
         badge=f"{like_count} ♥" if like_count else "",
