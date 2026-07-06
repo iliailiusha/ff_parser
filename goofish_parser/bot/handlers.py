@@ -101,7 +101,7 @@ async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.edit_message_text(
         f"Бренд: *{brand}*\nТип: *{type_ru}* → *{type_ko}*\n\n{price_prompt}",
         parse_mode="Markdown",
-        reply_markup=build_price_keyboard(),
+        reply_markup=build_price_keyboard(find_mode=is_find),
     )
     return PRICE_SELECT
 
@@ -110,22 +110,34 @@ async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     action = query.data.split(":", 1)[1]
-    is_find = context.user_data.get("find_mode")
     if action == "skip":
         context.user_data["price_min"] = None
         context.user_data["price_max"] = None
         sent = await query.edit_message_text("🔍 Ищу...")
         return await execute_search(update, context, query.message)
-    else:
-        currency = "рублях (₽)" if is_find else "вонах (₩)"
-        example = "`1000`" if is_find else "`50000`"
-        await query.edit_message_text(
-            f"Введи минимальную цену в {currency}:\n"
-            f"Например: {example}\n\n"
-            "Или отправь /cancel чтобы отменить.",
-            parse_mode="Markdown",
+
+    if action == "rub":
+        context.user_data["price_currency"] = "RUB"
+        prompt = (
+            "Введи минимальную цену в рублях (₽):\n"
+            "Например: `1000`\n\n"
+            "Или отправь /cancel чтобы отменить."
         )
-        return PRICE_INPUT_MIN
+    elif action == "krw":
+        context.user_data["price_currency"] = "KRW"
+        prompt = (
+            "Введи минимальную цену в вонах (₩):\n"
+            "Например: `50000`\n\n"
+            "Или отправь /cancel чтобы отменить."
+        )
+    else:
+        prompt = (
+            "Введи минимальную цену в вонах (₩):\n"
+            "Например: `50000`\n\n"
+            "Или отправь /cancel чтобы отменить."
+        )
+    await query.edit_message_text(prompt, parse_mode="Markdown")
+    return PRICE_INPUT_MIN
 
 
 async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -135,9 +147,9 @@ async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except ValueError:
         await update.message.reply_text("❌ Введи число. Попробуй снова:")
         return PRICE_INPUT_MIN
-    is_find = context.user_data.get("find_mode")
-    currency = "рублях (₽)" if is_find else "вонах (₩)"
-    example = "`3000`" if is_find else "`300000`"
+    cur = context.user_data.get("price_currency", "KRW")
+    currency = "рублях (₽)" if cur == "RUB" else "вонах (₩)"
+    example = "`3000`" if cur == "RUB" else "`300000`"
     await update.message.reply_text(
         f"Теперь введи максимальную цену в {currency}:\n"
         f"Например: {example}\n"
@@ -177,11 +189,13 @@ async def execute_search(
     try:
         is_find = context.user_data.pop("find_mode", None)
         if is_find:
-            rate = get_krw_to_rub()
-            if price_min is not None:
-                price_min = int(float(price_min) / rate)
-            if price_max is not None:
-                price_max = int(float(price_max) / rate)
+            price_currency = context.user_data.pop("price_currency", None)
+            if price_currency == "RUB":
+                rate = get_krw_to_rub()
+                if price_min is not None:
+                    price_min = int(float(price_min) / rate)
+                if price_max is not None:
+                    price_max = int(float(price_max) / rate)
             raw = search_products_free_text(
                 f"{brand} {type_ko}".strip(), sort="NEW", limit=100,
                 price_min=int(price_min) if price_min else None,

@@ -39,9 +39,18 @@ def build_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def build_price_keyboard() -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton("⏭ Без цены", callback_data="price:skip")],
-        [InlineKeyboardButton("💰 Указать цену (₩)", callback_data="price:set")],
-    ]
+def build_price_keyboard(find_mode: bool = False) -> InlineKeyboardMarkup:
+    if find_mode:
+        buttons = [
+            [InlineKeyboardButton("⏭ Без цены", callback_data="price:skip")],
+            [
+                InlineKeyboardButton("💰 В рублях (₽)", callback_data="price:rub"),
+                InlineKeyboardButton("💰 В вонах (₩)", callback_data="price:krw"),
+            ],
+        ]
+    else:
+        buttons = [
+            [InlineKeyboardButton("⏭ Без цены", callback_data="price:skip")],
+            [InlineKeyboardButton("💰 Указать цену (₩)", callback_data="price:set")],
+        ]
     return InlineKeyboardMarkup(buttons)
