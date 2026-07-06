@@ -19,6 +19,8 @@ class GoofishItem(BaseModel):
     like_count: int = 0
     size: str = ""
     created_at: str = ""
+    status: str = ""
+    is_visible: bool = True
 
 
 class SearchCriteria(BaseModel):

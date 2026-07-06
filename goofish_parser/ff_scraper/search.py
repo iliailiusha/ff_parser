@@ -13,9 +13,13 @@ CLOTHING_RU_TO_KO = {
     "футболка": "반팔 티셔츠",
     "рубашка": "셔츠",
     "свитер": "니트",
+    "свитшот": "맨투맨",
     "толстовка": "맨투맨",
     "худи": "후드티",
     "куртка": "자켓",
+    "бомбер": "봄버/블루종",
+    "косуха": "가죽자켓",
+    "джинсовка": "데님자켓",
     "пуховик": "패딩",
     "пальто": "코트",
     "ветровка": "바람막이",
@@ -30,8 +34,14 @@ CLOTHING_RU_TO_KO = {
     "лонгслив": "긴팔 티셔츠",
     "майка": "슬리브리스",
     "спортивный костюм": "트랙팬츠",
+    "карго": "카고팬츠",
+    "джоггеры": "조거팬츠",
+    "треники": "스웨트팬츠",
+    "легинсы": "레깅스",
     "шапка": "모자",
     "кепка": "야구모자",
+    "панама": "버킷햇",
+    "бейсболка": "야구모자",
     "рюкзак": "백팩",
     "сумка": "가방",
     "ремень": "벨트",
@@ -50,7 +60,41 @@ CLOTHING_RU_TO_KO = {
     "колготки": "스타킹",
     "сланцы": "슬리퍼",
     "тапки": "슬리퍼",
+    "флиска": "플리스",
 }
+
+# Similar words groups for fuzzy fallback
+SIMILAR_WORDS = {
+    "штаны": ["джинсы", "брюки", "карго", "джоггеры", "треники"],
+    "джинсы": ["штаны", "брюки", "карго"],
+    "брюки": ["штаны", "джинсы", "слаксы"],
+    "кроссовки": ["кеды", "ботинки", "сникерсы"],
+    "кеды": ["кроссовки", "сланцы"],
+    "ботинки": ["кроссовки", "сапоги"],
+    "куртка": ["пуховик", "ветровка", "бомбер", "косуха", "джинсовка"],
+    "свитер": ["свитшот", "толстовка", "худи", "лонгслив"],
+    "свитшот": ["свитер", "толстовка", "худи"],
+    "толстовка": ["свитер", "свитшот", "худи"],
+    "худи": ["свитер", "свитшот", "толстовка"],
+    "футболка": ["майка", "лонгслив", "поло"],
+    "пуховик": ["куртка", "пальто", "ветровка"],
+}
+
+
+def _find_clothing_keywords(text: str) -> list[str]:
+    text_lower = text.lower()
+    found = []
+    for ru_word in CLOTHING_RU_TO_KO:
+        if ru_word in text_lower:
+            found.append(ru_word)
+    return found
+
+
+def _find_similar(query_type: str) -> list[str]:
+    query_lower = query_type.lower().strip()
+    if query_lower in SIMILAR_WORDS:
+        return SIMILAR_WORDS[query_lower]
+    return []
 
 
 SORT_OPTIONS = {
@@ -85,8 +129,8 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
     original_price = _parse_price(raw.get("original_price") or 0)
     item_id = str(raw.get("id", ""))
     title = raw.get("title", "")
-    brand = raw.get("brand", "")
-    condition = raw.get("condition", "")
+    brand = raw.get("brand") or ""
+    condition = raw.get("condition") or ""
     size = raw.get("size") or ""
     images = raw.get("resizedSmallImages") or []
     like_count = raw.get("like_count") or 0
@@ -94,6 +138,8 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
     created_at = raw.get("createdAt") or ""
     seller_info = raw.get("seller") or {}
     seller_id = str(seller_info.get("id", "")) if isinstance(seller_info, dict) else ""
+    status = raw.get("status") or ""
+    is_visible = raw.get("is_visible", True)
 
     ext_url = raw.get("external_url") or ""
     if ext_url.startswith("http"):
@@ -109,6 +155,8 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
         price_cny=price,
         url=url,
         seller_id=seller_id,
+        status=status,
+        is_visible=is_visible,
         condition=condition or "",
         location=brand,
         badge=f"{like_count} ♥" if like_count else "",
@@ -163,8 +211,37 @@ async def search_by_brand_type(
     return await search_items(criteria)
 
 
-def search_products_free_text(query: str, sort: str = "NEW", limit: int = 20) -> list[GoofishItem]:
-    items = search_products(query=query, sort=sort, limit=limit)
+def search_products_free_text(
+    query: str,
+    sort: str = "NEW",
+    limit: int = 30,
+    auto_detect_clothing: bool = True,
+) -> list[GoofishItem]:
+    search_query = query.strip()
+    clothing_used = ""
+
+    if auto_detect_clothing:
+        clothing_words = _find_clothing_keywords(query)
+        if clothing_words:
+            for cw in clothing_words:
+                ko = CLOTHING_RU_TO_KO[cw]
+                search_query = search_query.lower().replace(cw, ko, 1)
+            clothing_used = clothing_words[0]
+
+    items = search_products(query=search_query, sort=sort, limit=limit, show_only="selling")
+    if not items and clothing_used:
+        similar = _find_similar(clothing_used)
+        for sim in similar:
+            ko = CLOTHING_RU_TO_KO.get(sim, sim)
+            fallback_query = query.lower().replace(clothing_used, ko, 1)
+            items = search_products(query=fallback_query, sort=sort, limit=limit, show_only="selling")
+            if items:
+                break
+
     if not items:
         return []
-    return [_ff_item_to_model(i) for i in items]
+
+    parsed = [_ff_item_to_model(i) for i in items]
+    sold_keywords = ["sold", "reserved", "판매완료", "예약중"]
+    filtered = [i for i in parsed if i.price_cny > 0 and i.status not in sold_keywords]
+    return filtered

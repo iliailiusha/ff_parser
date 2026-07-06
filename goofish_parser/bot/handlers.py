@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 from datetime import datetime
 from typing import Optional
 
@@ -168,10 +169,13 @@ async def execute_search(
 
     except Exception as e:
         logger.exception("Search error")
-        await msg.edit_text(
-            f"❌ Ошибка при поиске: {e}\n\n"
-            f"Попробуйте позже."
-        )
+        error_text = f"❌ Ошибка при поиске: {e}\n\nПопробуйте позже."
+        if hasattr(msg, "edit_message_text"):
+            await msg.edit_message_text(error_text)
+        elif hasattr(msg, "edit_text"):
+            await msg.edit_text(error_text)
+        else:
+            await update.effective_chat.send_message(error_text)
 
     return ConversationHandler.END
 
@@ -193,9 +197,14 @@ def _format_time(iso_str: str) -> str:
 
 async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = " ".join(context.args) if context.args else ""
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return
+
     if not text:
-        await update.message.reply_text(
-            "🔍 *Поиск новых товаров*\n\n"
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🔍 *Поиск новых товаров*\n\n"
             "Используй: `/find <запрос>`\n"
             "Например: `/find Nike`\n\n"
             "Результаты сортируются по дате (самые свежие).",
@@ -203,10 +212,10 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    msg = await update.message.reply_text(f"🔍 Ищу *{text}*...", parse_mode="Markdown")
+    msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=30)
+        items = search_products_free_text(text, sort="NEW", limit=10)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
@@ -228,7 +237,10 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     except Exception as e:
         logger.exception("Find error")
-        await msg.edit_text(f"❌ Ошибка: {e}")
+        try:
+            await msg.edit_text(f"❌ Ошибка: {e}")
+        except Exception:
+            await context.bot.send_message(chat_id=chat_id, text=f"❌ Ошибка: {e}")
 
 
 async def _show_find_page(
@@ -244,8 +256,26 @@ async def _show_find_page(
         return
 
     items = data["items"]
-    total = data["total_pages"]
     query = data["query"]
+
+    # Auto-load more when reaching last page
+    while page * FIND_ITEMS_PER_PAGE >= len(items):
+        old_limit = data.get("limit", 30)
+        new_limit = old_limit + 20
+        new_raw = search_products_free_text(query, sort="NEW", limit=new_limit)
+        existing_ids = {i.item_id for i in items}
+        new_count = 0
+        for i in new_raw:
+            if i.item_id not in existing_ids:
+                items.append(i)
+                new_count += 1
+        data["items"] = items
+        data["limit"] = new_limit
+        if new_count == 0:
+            break
+
+    total = (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE
+    data["total_pages"] = total
     start = page * FIND_ITEMS_PER_PAGE
     batch = items[start:start + FIND_ITEMS_PER_PAGE]
     rate = get_krw_to_rub()
@@ -263,7 +293,9 @@ async def _show_find_page(
         pass
 
     new_ids = []
-    chat_id = update.effective_chat.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id:
+        return
 
     for item in batch:
         price_rub = round(item.price_cny * rate)
@@ -273,7 +305,8 @@ async def _show_find_page(
             discount = f" 📉 -{d}%"
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
         brand_str = f"🏷 *{item.location}*\n" if item.location else ""
-        link_str = f"[🔗 Открыть на FruitsFamily]({item.url})"
+        search_link = f"https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)}"
+        link_str = f"[🔗 Найти на FruitsFamily]({search_link})"
 
         caption = (
             f"*{item.title}*\n"
