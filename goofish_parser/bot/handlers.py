@@ -77,8 +77,8 @@ async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if action == "skip":
         context.user_data["price_min"] = None
         context.user_data["price_max"] = None
-        await query.edit_message_text("🔍 Ищу...")
-        return await execute_search(update, context, query)
+        sent = await query.edit_message_text("🔍 Ищу...")
+        return await execute_search(update, context, query.message)
     else:
         await query.edit_message_text(
             "Введи минимальную цену в вонах (₩):\n"
@@ -143,11 +143,13 @@ async def execute_search(
 
         items = result.items
         if not items:
-            await msg.edit_text(
-                f"😕 Ничего не найдено по запросу *{label}*.\n"
-                f"Попробуйте изменить параметры.",
-                parse_mode="Markdown",
-            )
+            text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
+            if hasattr(msg, "edit_message_text"):
+                await msg.edit_message_text(text, parse_mode="Markdown")
+            elif hasattr(msg, "edit_text"):
+                await msg.edit_text(text, parse_mode="Markdown")
+            else:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
             return ConversationHandler.END
 
         save_search(brand, type_ru, price_min, price_max)
@@ -214,6 +216,8 @@ def _format_time(iso_str: str) -> str:
 
 
 async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
     text = " ".join(context.args) if context.args else ""
     chat_id = update.effective_chat.id if update.effective_chat else None
     if not chat_id:
@@ -233,7 +237,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=10)
+        items = search_products_free_text(text, sort="NEW", limit=20)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
@@ -250,7 +254,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "query": text,
             "base_query": text,
             "korean_query": None,
-            "limit": 10,
+            "limit": 20,
             "max_reached": False,
         }
 
@@ -287,40 +291,6 @@ async def _show_find_page(
 
     items = data["items"]
     query = data.get("korean_query") or data["query"]
-
-    # Auto-load more when beyond loaded items (infinite, up to 1 week old)
-    while True:
-        start = page * FIND_ITEMS_PER_PAGE
-        if start < len(items):
-            break
-        if data.get("max_reached"):
-            break
-        old_limit = data.get("limit", 10)
-        new_limit = old_limit + 30
-        new_raw = search_products_free_text(
-            query, sort="NEW", limit=new_limit, auto_detect_clothing=False,
-        )
-        existing_ids = {i.item_id for i in items}
-        new_count = 0
-        for i in new_raw:
-            if i.item_id not in existing_ids:
-                # skip items older than 1 week
-                if i.created_at:
-                    try:
-                        from datetime import timezone
-                        dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
-                        if (datetime.now(timezone.utc) - dt).days > 7:
-                            data["max_reached"] = True
-                            break
-                    except Exception:
-                        pass
-                items.append(i)
-                new_count += 1
-        data["items"] = items
-        data["limit"] = new_limit
-        if new_count == 0 or data.get("max_reached"):
-            break
-
     total = (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE
     data["total_pages"] = total
     start = page * FIND_ITEMS_PER_PAGE
@@ -345,11 +315,10 @@ async def _show_find_page(
         return
 
     if not batch:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"😕 Больше товаров по запросу *{query}* нет.",
-            parse_mode="Markdown",
-        )
+        nav_text = f"😕 Больше товаров по запросу нет."
+        if data.get("max_reached"):
+            nav_text += "\n(все товары старше недели)"
+        await context.bot.send_message(chat_id=chat_id, text=nav_text)
         return
 
     for item in batch:
@@ -402,8 +371,9 @@ async def _show_find_page(
     row.append(InlineKeyboardButton(f"{page + 1}/{total}", callback_data="find_pg:noop"))
     if page < total - 1:
         row.append(InlineKeyboardButton("▶️", callback_data=f"find_pg:{key}:{page + 1}"))
-    if row:
-        buttons.append(row)
+    buttons.append(row)
+    if page == total - 1 and not data.get("max_reached"):
+        buttons.append([InlineKeyboardButton("📥 Загрузить ещё", callback_data=f"find_more:{key}")])
     buttons.append([InlineKeyboardButton("❌ Закрыть", callback_data="find_pg:close")])
 
     nav = await context.bot.send_message(
@@ -417,6 +387,72 @@ async def _show_find_page(
     context.user_data[key + "_msg_ids"] = new_ids
 
 
+async def _load_more_items(context, key: str) -> list:
+    data = context.user_data.get(key)
+    if not data:
+        return []
+    base_query = data["query"]
+    korean_query = data.get("korean_query")
+    old_limit = data.get("limit", 10)
+    new_limit = old_limit + 50
+
+    # Try up to 3 strategies:
+    # 1. Korean query (if available) with new limit
+    # 2. Original user query with new limit
+    # 3. Brand-only (first word) — broadest
+    queries_to_try = []
+    if korean_query and korean_query != base_query:
+        queries_to_try.append(korean_query)
+    queries_to_try.append(base_query)
+    first_word = base_query.split()[0] if base_query.strip() else None
+    if first_word and first_word not in queries_to_try:
+        queries_to_try.append(first_word)
+
+    items = data["items"]
+    existing_ids = {i.item_id for i in items}
+    from datetime import timezone
+    new_items = []
+    tried_queries = set()
+
+    for q in queries_to_try:
+        if q in tried_queries:
+            continue
+        tried_queries.add(q)
+        new_raw = search_products_free_text(
+            q, sort="NEW", limit=new_limit, auto_detect_clothing=False,
+        )
+        for i in new_raw:
+            if i.item_id in existing_ids:
+                continue
+            if i.created_at:
+                try:
+                    dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - dt).days > 7:
+                        continue
+                except Exception:
+                    pass
+            items.append(i)
+            existing_ids.add(i.item_id)
+            new_items.append(i)
+        if new_items:
+            break
+
+    data["items"] = sorted(items, key=_created_at_dt, reverse=True)
+    data["limit"] = new_limit
+    if not new_items:
+        data["max_reached"] = True
+    return new_items
+
+
+def _created_at_dt(item) -> datetime:
+    if item.created_at:
+        try:
+            return datetime.fromisoformat(item.created_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+    return datetime.min
+
+
 async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -426,6 +462,11 @@ async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     if data == "find_pg:close":
         await query.message.delete()
+        return
+    if data.startswith("find_more:"):
+        key = data.split(":", 1)[1]
+        await _load_more_items(context, key)
+        await _show_find_page(update, context, query.message, key, 0)
         return
 
     parts = data.split(":", 2)

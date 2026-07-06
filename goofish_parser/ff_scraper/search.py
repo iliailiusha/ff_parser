@@ -124,48 +124,52 @@ def _build_search_query(criteria: SearchCriteria) -> str:
     return " ".join(parts)
 
 
-def _ff_item_to_model(raw: dict) -> GoofishItem:
-    price = _parse_price(raw.get("price", 0))
-    original_price = _parse_price(raw.get("original_price") or 0)
-    item_id = str(raw.get("id", ""))
-    title = raw.get("title", "")
-    brand = raw.get("brand") or ""
-    condition = raw.get("condition") or ""
-    size = raw.get("size") or ""
-    images = raw.get("resizedSmallImages") or []
-    like_count = raw.get("like_count") or 0
-    discount_rate = raw.get("discount_rate")
-    created_at = raw.get("createdAt") or ""
-    seller_info = raw.get("seller") or {}
-    seller_id = str(seller_info.get("id", "")) if isinstance(seller_info, dict) else ""
-    status = raw.get("status") or ""
-    is_visible = raw.get("is_visible", True)
+def _ff_item_to_model(raw: dict) -> GoofishItem | None:
+    try:
+        price = _parse_price(raw.get("price", 0))
+        original_price = _parse_price(raw.get("original_price") or 0)
+        item_id = str(raw.get("id", ""))
+        title = str(raw.get("title") or "")
+        brand = raw.get("brand") or ""
+        condition = raw.get("condition") or ""
+        size = raw.get("size") or ""
+        images = raw.get("resizedSmallImages") or []
+        like_count = int(raw.get("like_count") or 0)
+        discount_rate = raw.get("discount_rate")
+        created_at = raw.get("createdAt") or ""
+        seller_info = raw.get("seller") or {}
+        seller_id = str(seller_info.get("id", "")) if isinstance(seller_info, dict) else ""
+        status = raw.get("status") or ""
+        is_visible = bool(raw.get("is_visible", True))
 
-    ext_url = raw.get("external_url") or ""
-    if ext_url.startswith("http"):
-        url = ext_url
-    elif seller_id:
-        url = f"https://fruitsfamily.com/seller/{seller_id}"
-    else:
-        url = f"https://fruitsfamily.com"
+        ext_url = raw.get("external_url") or ""
+        if ext_url.startswith("http"):
+            url = ext_url
+        elif seller_id:
+            url = f"https://fruitsfamily.com/seller/{seller_id}"
+        else:
+            url = f"https://fruitsfamily.com"
 
-    return GoofishItem(
-        item_id=item_id,
-        title=f"{title}",
-        price_cny=price,
-        url=url,
-        seller_id=seller_id,
-        status=status,
-        is_visible=is_visible,
-        condition=condition or "",
-        location=brand,
-        badge=f"{like_count} ♥" if like_count else "",
-        images=images,
-        category_id="",
-        price_original_cny=original_price,
-        discount_rate=discount_rate,
-        created_at=created_at,
-    )
+        return GoofishItem(
+            item_id=item_id,
+            title=title,
+            price_cny=price,
+            url=url,
+            seller_id=seller_id,
+            status=status,
+            is_visible=is_visible,
+            condition=condition,
+            location=brand,
+            badge=f"{like_count} ♥" if like_count else "",
+            images=images,
+            category_id="",
+            price_original_cny=original_price,
+            discount_rate=discount_rate,
+            created_at=created_at,
+        )
+    except Exception:
+        logger.exception("Failed to parse item")
+        return None
 
 
 async def search_items(criteria: SearchCriteria) -> SearchResult:
@@ -190,6 +194,7 @@ async def search_items(criteria: SearchCriteria) -> SearchResult:
         return SearchResult(empty=True)
 
     parsed = [_ff_item_to_model(i) for i in items]
+    parsed = [i for i in parsed if i is not None]
     filtered = [i for i in parsed if i.price_cny > 0]
     return SearchResult(items=filtered, empty=len(filtered) == 0)
 
@@ -252,6 +257,7 @@ def search_products_free_text(
         return []
 
     parsed = [_ff_item_to_model(i) for i in raw_items]
+    parsed = [i for i in parsed if i is not None]
     sold_keywords = ["sold", "reserved", "판매완료", "예약중"]
     filtered = [i for i in parsed if i.price_cny > 0 and i.status not in sold_keywords]
     return filtered

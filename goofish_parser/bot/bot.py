@@ -56,7 +56,7 @@ def run_bot() -> None:
     app.add_handler(CommandHandler("rate", rate_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("find", find_command))
-    app.add_handler(CallbackQueryHandler(find_nav_callback, pattern=r"^find_pg:"))
+    app.add_handler(CallbackQueryHandler(find_nav_callback, pattern=r"^(find_pg:|find_more:)"))
 
     job_queue = app.job_queue
     if job_queue:

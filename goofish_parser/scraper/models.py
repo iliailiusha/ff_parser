@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 
 
@@ -21,6 +21,11 @@ class GoofishItem(BaseModel):
     created_at: str = ""
     status: str = ""
     is_visible: bool = True
+
+    @field_validator("location", "condition", "size", "status", mode="before")
+    @classmethod
+    def _stringify_none(cls, v):
+        return "" if v is None else v
 
 
 class SearchCriteria(BaseModel):
