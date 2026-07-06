@@ -218,30 +218,40 @@ def search_products_free_text(
     auto_detect_clothing: bool = True,
 ) -> list[GoofishItem]:
     search_query = query.strip()
-    clothing_used = ""
+    raw_items = []
 
     if auto_detect_clothing:
         clothing_words = _find_clothing_keywords(query)
         if clothing_words:
             for cw in clothing_words:
                 ko = CLOTHING_RU_TO_KO[cw]
-                search_query = search_query.lower().replace(cw, ko, 1)
-            clothing_used = clothing_words[0]
+                search_query = search_query.replace(cw, ko, 1)
 
-    items = search_products(query=search_query, sort=sort, limit=limit, show_only="selling")
-    if not items and clothing_used:
-        similar = _find_similar(clothing_used)
-        for sim in similar:
-            ko = CLOTHING_RU_TO_KO.get(sim, sim)
-            fallback_query = query.lower().replace(clothing_used, ko, 1)
-            items = search_products(query=fallback_query, sort=sort, limit=limit, show_only="selling")
-            if items:
-                break
+    raw_items = search_products(query=search_query, sort=sort, limit=limit, show_only="selling")
 
-    if not items:
+    # Fallback: if converted query returns too few, try the original query
+    if not raw_items:
+        raw_items = search_products(query=query.strip(), sort=sort, limit=limit, show_only="selling")
+
+    # Fallback: try similar clothing types
+    if not raw_items and auto_detect_clothing:
+        clothing_words = _find_clothing_keywords(query)
+        if clothing_words:
+            for cw in clothing_words:
+                similar = _find_similar(cw)
+                for sim in similar:
+                    ko = CLOTHING_RU_TO_KO.get(sim, sim)
+                    fq = query.replace(cw, ko, 1)
+                    raw_items = search_products(query=fq, sort=sort, limit=limit, show_only="selling")
+                    if raw_items:
+                        break
+                if raw_items:
+                    break
+
+    if not raw_items:
         return []
 
-    parsed = [_ff_item_to_model(i) for i in items]
+    parsed = [_ff_item_to_model(i) for i in raw_items]
     sold_keywords = ["sold", "reserved", "판매완료", "예약중"]
     filtered = [i for i in parsed if i.price_cny > 0 and i.status not in sold_keywords]
     return filtered

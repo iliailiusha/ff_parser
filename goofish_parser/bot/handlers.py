@@ -225,12 +225,12 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         save_items(items, text)
 
-        total_pages = (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE
         key = f"find_{update.effective_user.id}"
         context.user_data[key] = {
             "items": items,
-            "total_pages": total_pages,
+            "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
             "query": text,
+            "limit": 10,
         }
 
         await _show_find_page(update, context, msg, key, 0)
@@ -258,11 +258,14 @@ async def _show_find_page(
     items = data["items"]
     query = data["query"]
 
-    # Auto-load more when reaching last page
-    while page * FIND_ITEMS_PER_PAGE >= len(items):
-        old_limit = data.get("limit", 30)
-        new_limit = old_limit + 20
-        new_raw = search_products_free_text(query, sort="NEW", limit=new_limit)
+    # Auto-load more when beyond loaded items
+    while True:
+        start = page * FIND_ITEMS_PER_PAGE
+        if start < len(items):
+            break
+        old_limit = data.get("limit", 10)
+        new_limit = old_limit + 30
+        new_raw = search_products_free_text(query, sort="NEW", limit=new_limit, auto_detect_clothing=False)
         existing_ids = {i.item_id for i in items}
         new_count = 0
         for i in new_raw:
@@ -297,6 +300,14 @@ async def _show_find_page(
     if not chat_id:
         return
 
+    if not batch:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"😕 Больше товаров по запросу *{query}* нет.",
+            parse_mode="Markdown",
+        )
+        return
+
     for item in batch:
         price_rub = round(item.price_cny * rate)
         discount = ""
@@ -306,7 +317,8 @@ async def _show_find_page(
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
         brand_str = f"🏷 *{item.location}*\n" if item.location else ""
         search_link = f"https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)}"
-        link_str = f"[🔗 Найти на FruitsFamily]({search_link})"
+        seller_ref = f" | [👤 Продавец]({item.url})" if item.url != "https://fruitsfamily.com" else ""
+        link_str = f"[🔍 Искать на FF]({search_link}){seller_ref}"
 
         caption = (
             f"*{item.title}*\n"
