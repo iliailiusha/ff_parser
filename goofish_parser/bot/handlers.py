@@ -14,7 +14,7 @@ from goofish_parser.analyzer.scoring import score_items
 from goofish_parser.bot.messages import format_search_result, HELP_TEXT
 from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboard, build_price_keyboard
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
-from goofish_parser.ff_scraper.search import search_by_brand_type, search_products_free_text, search_all_new_items
+from goofish_parser.ff_scraper.search import search_by_brand_type, search_products_free_text
 from goofish_parser.services.exchange_rate import get_krw_to_rub, fetch_krw_rate
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
 
@@ -29,12 +29,44 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.pop("find_mode", None)
     welcome = (
         "👋 Привет! Я бот для поиска выгодных товаров на FruitsFamily (韩国二手平台).\n\n"
         "Выбери бренд чтобы начать:"
     )
     await update.message.reply_text(
         welcome,
+        reply_markup=build_brand_keyboard(),
+    )
+    return BRAND_SELECT
+
+
+async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.args:
+        text = " ".join(context.args)
+        chat_id = update.effective_chat.id
+        msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
+        try:
+            items = search_products_free_text(text, sort="NEW", limit=100)
+            if not items:
+                await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
+                return ConversationHandler.END
+            save_items(items, text)
+            key = f"find_{update.effective_user.id}"
+            context.user_data[key] = {
+                "items": items,
+                "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
+                "query": text,
+            }
+            await _show_find_page(update, context, msg, key, 0)
+        except Exception as e:
+            logger.exception("Find error")
+            await context.bot.send_message(chat_id=chat_id, text=f"❌ Ошибка: {e}")
+        return ConversationHandler.END
+
+    context.user_data["find_mode"] = True
+    await update.message.reply_text(
+        "👋 Выбери бренд для поиска новых товаров:",
         reply_markup=build_brand_keyboard(),
     )
     return BRAND_SELECT
@@ -133,15 +165,24 @@ async def execute_search(
     label = f"{brand} {type_ru}"
 
     try:
-        result = await search_by_brand_type(
-            brand=brand,
-            item_type=type_ko,
-            price_min=price_min,
-            price_max=price_max,
-            limit=40,
-        )
-
-        items = result.items
+        is_find = context.user_data.pop("find_mode", None)
+        if is_find:
+            raw = search_products_free_text(
+                f"{brand} {type_ko}".strip(), sort="NEW", limit=100,
+                price_min=int(price_min) if price_min else None,
+                price_max=int(price_max) if price_max else None,
+                auto_detect_clothing=False,
+            )
+            items = raw
+        else:
+            result = await search_by_brand_type(
+                brand=brand,
+                item_type=type_ko,
+                price_min=price_min,
+                price_max=price_max,
+                limit=40,
+            )
+            items = result.items if result else []
         if not items:
             text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
             if hasattr(msg, "edit_message_text"):
@@ -237,7 +278,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_all_new_items(text)
+        items = search_products_free_text(text, sort="NEW", limit=100)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
@@ -252,7 +293,6 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "items": items,
             "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
             "query": text,
-            "korean_query": None,
         }
 
         # detect what the API was actually called with by checking if clothing was detected
@@ -460,6 +500,7 @@ def search_conversation() -> ConversationHandler:
         entry_points=[
             CommandHandler("search", search_start),
             CommandHandler("start", search_start),
+            CommandHandler("find", find_start),
         ],
         states={
             BRAND_SELECT: [CallbackQueryHandler(on_brand, pattern=r"^brand:")],

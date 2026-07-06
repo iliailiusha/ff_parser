@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from goofish_parser.scraper.models import GoofishItem, SearchCriteria, SearchResult
@@ -269,74 +269,4 @@ def search_products_free_text(
     return filtered
 
 
-def _created_at_key(item: GoofishItem) -> datetime:
-    if item.created_at:
-        try:
-            return datetime.fromisoformat(item.created_at.replace("Z", "+00:00"))
-        except Exception:
-            pass
-    return datetime.min
 
-
-def search_all_new_items(query: str) -> list[GoofishItem]:
-    max_age_days = 7
-    segments = 10
-    seen_ids: set[str] = set()
-    all_items: list[GoofishItem] = []
-
-    def add_items(raw: list[GoofishItem]):
-        for item in raw:
-            if item.item_id in seen_ids:
-                continue
-            if item.created_at:
-                try:
-                    dt = datetime.fromisoformat(item.created_at.replace("Z", "+00:00"))
-                    if (datetime.now(timezone.utc) - dt).days > max_age_days:
-                        continue
-                except Exception:
-                    pass
-            seen_ids.add(item.item_id)
-            all_items.append(item)
-
-    # Build the query to use for all segment calls
-    clothing_words = _find_clothing_keywords(query)
-    ko_query = query
-    if clothing_words:
-        for cw in clothing_words:
-            ko_query = ko_query.replace(cw, CLOTHING_RU_TO_KO[cw], 1)
-
-    # First batch with full clothing detection
-    first_batch = search_products_free_text(query, sort="NEW", limit=100)
-    if not first_batch:
-        return []
-
-    add_items(first_batch)
-
-    prices = [i.price_cny for i in all_items if i.price_cny > 0]
-    if not prices:
-        return sorted(all_items, key=_created_at_key, reverse=True)
-
-    min_price = min(prices)
-    max_price = max(prices)
-    price_span = max_price - min_price
-
-    if price_span < 10000:
-        return sorted(all_items, key=_created_at_key, reverse=True)
-
-    segment_width = price_span / segments
-    overlap = segment_width * 0.1
-
-    for i in range(segments):
-        p_min = max(0, int(min_price + i * segment_width - (overlap if i > 0 else 0)))
-        p_max = int(min_price + (i + 1) * segment_width + overlap)
-        if i == segments - 1:
-            p_max = int(max_price * 2)
-
-        batch = search_products_free_text(
-            ko_query, sort="NEW", limit=100,
-            price_min=p_min, price_max=p_max,
-            auto_detect_clothing=False,
-        )
-        add_items(batch)
-
-    return sorted(all_items, key=_created_at_key, reverse=True)
