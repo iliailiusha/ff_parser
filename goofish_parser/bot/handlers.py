@@ -237,7 +237,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=30)
+        items = search_products_free_text(text, sort="NEW", limit=200)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
@@ -252,10 +252,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "items": items,
             "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
             "query": text,
-            "base_query": text,
             "korean_query": None,
-            "limit": 30,
-            "max_reached": False,
         }
 
         # detect what the API was actually called with by checking if clothing was detected
@@ -315,10 +312,7 @@ async def _show_find_page(
         return
 
     if not batch:
-        nav_text = f"😕 Больше товаров по запросу нет."
-        if data.get("max_reached"):
-            nav_text += "\n(все товары старше недели)"
-        await context.bot.send_message(chat_id=chat_id, text=nav_text)
+        await context.bot.send_message(chat_id=chat_id, text="😕 Больше товаров по запросу нет.")
         return
 
     for item in batch:
@@ -372,8 +366,6 @@ async def _show_find_page(
     if page < total - 1:
         row.append(InlineKeyboardButton("▶️", callback_data=f"find_pg:{key}:{page + 1}"))
     buttons.append(row)
-    if page == total - 1 and not data.get("max_reached"):
-        buttons.append([InlineKeyboardButton("📥 Загрузить ещё", callback_data=f"find_more:{key}")])
     buttons.append([InlineKeyboardButton("❌ Закрыть", callback_data="find_pg:close")])
 
     nav = await context.bot.send_message(
@@ -385,42 +377,6 @@ async def _show_find_page(
     new_ids.append(nav.message_id)
 
     context.user_data[key + "_msg_ids"] = new_ids
-
-
-async def _load_more_items(context, key: str) -> list:
-    data = context.user_data.get(key)
-    if not data:
-        return []
-    api_query = data.get("korean_query") or data["query"]
-    old_limit = data.get("limit", 10)
-    new_limit = old_limit + 50
-
-    new_raw = search_products_free_text(
-        api_query, sort="NEW", limit=new_limit, auto_detect_clothing=False,
-    )
-    items = data["items"]
-    existing_ids = {i.item_id for i in items}
-    from datetime import timezone
-    new_items = []
-    for i in new_raw:
-        if i.item_id in existing_ids:
-            continue
-        if i.created_at:
-            try:
-                dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
-                if (datetime.now(timezone.utc) - dt).days > 7:
-                    continue
-            except Exception:
-                pass
-        items.append(i)
-        existing_ids.add(i.item_id)
-        new_items.append(i)
-
-    data["items"] = sorted(items, key=_created_at_dt, reverse=True)
-    data["limit"] = new_limit
-    if not new_items:
-        data["max_reached"] = True
-    return new_items
 
 
 def _created_at_dt(item) -> datetime:
@@ -442,12 +398,6 @@ async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if data == "find_pg:close":
         await query.message.delete()
         return
-    if data.startswith("find_more:"):
-        key = data.split(":", 1)[1]
-        await _load_more_items(context, key)
-        await _show_find_page(update, context, query.message, key, 0)
-        return
-
     parts = data.split(":", 2)
     if len(parts) != 3:
         return
