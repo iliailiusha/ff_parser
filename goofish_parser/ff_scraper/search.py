@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 from goofish_parser.scraper.models import GoofishItem, SearchCriteria, SearchResult
@@ -221,6 +222,8 @@ def search_products_free_text(
     sort: str = "NEW",
     limit: int = 30,
     auto_detect_clothing: bool = True,
+    price_min: Optional[int] = None,
+    price_max: Optional[int] = None,
 ) -> list[GoofishItem]:
     search_query = query.strip()
     raw_items = []
@@ -232,11 +235,13 @@ def search_products_free_text(
                 ko = CLOTHING_RU_TO_KO[cw]
                 search_query = search_query.replace(cw, ko, 1)
 
-    raw_items = search_products(query=search_query, sort=sort, limit=limit, show_only="selling")
+    raw_items = search_products(query=search_query, sort=sort, limit=limit, show_only="selling",
+                                price_min=price_min, price_max=price_max)
 
     # Fallback: if converted query returns too few, try the original query
     if not raw_items:
-        raw_items = search_products(query=query.strip(), sort=sort, limit=limit, show_only="selling")
+        raw_items = search_products(query=query.strip(), sort=sort, limit=limit, show_only="selling",
+                                    price_min=price_min, price_max=price_max)
 
     # Fallback: try similar clothing types
     if not raw_items and auto_detect_clothing:
@@ -247,7 +252,8 @@ def search_products_free_text(
                 for sim in similar:
                     ko = CLOTHING_RU_TO_KO.get(sim, sim)
                     fq = query.replace(cw, ko, 1)
-                    raw_items = search_products(query=fq, sort=sort, limit=limit, show_only="selling")
+                    raw_items = search_products(query=fq, sort=sort, limit=limit, show_only="selling",
+                                                price_min=price_min, price_max=price_max)
                     if raw_items:
                         break
                 if raw_items:
@@ -261,3 +267,76 @@ def search_products_free_text(
     sold_keywords = ["sold", "reserved", "판매완료", "예약중"]
     filtered = [i for i in parsed if i.price_cny > 0 and i.status not in sold_keywords]
     return filtered
+
+
+def _created_at_key(item: GoofishItem) -> datetime:
+    if item.created_at:
+        try:
+            return datetime.fromisoformat(item.created_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+    return datetime.min
+
+
+def search_all_new_items(query: str) -> list[GoofishItem]:
+    max_age_days = 7
+    segments = 10
+    seen_ids: set[str] = set()
+    all_items: list[GoofishItem] = []
+
+    def add_items(raw: list[GoofishItem]):
+        for item in raw:
+            if item.item_id in seen_ids:
+                continue
+            if item.created_at:
+                try:
+                    dt = datetime.fromisoformat(item.created_at.replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - dt).days > max_age_days:
+                        continue
+                except Exception:
+                    pass
+            seen_ids.add(item.item_id)
+            all_items.append(item)
+
+    # Build the query to use for all segment calls
+    clothing_words = _find_clothing_keywords(query)
+    ko_query = query
+    if clothing_words:
+        for cw in clothing_words:
+            ko_query = ko_query.replace(cw, CLOTHING_RU_TO_KO[cw], 1)
+
+    # First batch with full clothing detection
+    first_batch = search_products_free_text(query, sort="NEW", limit=100)
+    if not first_batch:
+        return []
+
+    add_items(first_batch)
+
+    prices = [i.price_cny for i in all_items if i.price_cny > 0]
+    if not prices:
+        return sorted(all_items, key=_created_at_key, reverse=True)
+
+    min_price = min(prices)
+    max_price = max(prices)
+    price_span = max_price - min_price
+
+    if price_span < 10000:
+        return sorted(all_items, key=_created_at_key, reverse=True)
+
+    segment_width = price_span / segments
+    overlap = segment_width * 0.1
+
+    for i in range(segments):
+        p_min = max(0, int(min_price + i * segment_width - (overlap if i > 0 else 0)))
+        p_max = int(min_price + (i + 1) * segment_width + overlap)
+        if i == segments - 1:
+            p_max = int(max_price * 2)
+
+        batch = search_products_free_text(
+            ko_query, sort="NEW", limit=100,
+            price_min=p_min, price_max=p_max,
+            auto_detect_clothing=False,
+        )
+        add_items(batch)
+
+    return sorted(all_items, key=_created_at_key, reverse=True)

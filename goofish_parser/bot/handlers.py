@@ -14,7 +14,7 @@ from goofish_parser.analyzer.scoring import score_items
 from goofish_parser.bot.messages import format_search_result, HELP_TEXT
 from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboard, build_price_keyboard
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
-from goofish_parser.ff_scraper.search import search_by_brand_type, search_products_free_text
+from goofish_parser.ff_scraper.search import search_by_brand_type, search_products_free_text, search_all_new_items
 from goofish_parser.services.exchange_rate import get_krw_to_rub, fetch_krw_rate
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
 
@@ -237,7 +237,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=100)
+        items = search_all_new_items(text)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
