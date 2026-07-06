@@ -396,10 +396,6 @@ async def _load_more_items(context, key: str) -> list:
     old_limit = data.get("limit", 10)
     new_limit = old_limit + 50
 
-    # Try up to 3 strategies:
-    # 1. Korean query (if available) with new limit
-    # 2. Original user query with new limit
-    # 3. Brand-only (first word) — broadest
     queries_to_try = []
     if korean_query and korean_query != base_query:
         queries_to_try.append(korean_query)
@@ -414,28 +410,31 @@ async def _load_more_items(context, key: str) -> list:
     new_items = []
     tried_queries = set()
 
-    for q in queries_to_try:
-        if q in tried_queries:
-            continue
-        tried_queries.add(q)
-        new_raw = search_products_free_text(
-            q, sort="NEW", limit=new_limit, auto_detect_clothing=False,
-        )
-        for i in new_raw:
-            if i.item_id in existing_ids:
-                continue
-            if i.created_at:
-                try:
-                    dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
-                    if (datetime.now(timezone.utc) - dt).days > 7:
-                        continue
-                except Exception:
-                    pass
-            items.append(i)
-            existing_ids.add(i.item_id)
-            new_items.append(i)
+    for sort_mode in ("NEW", "POPULAR"):
         if new_items:
             break
+        for q in queries_to_try:
+            if q in tried_queries:
+                continue
+            tried_queries.add(q)
+            new_raw = search_products_free_text(
+                q, sort=sort_mode, limit=new_limit, auto_detect_clothing=False,
+            )
+            for i in new_raw:
+                if i.item_id in existing_ids:
+                    continue
+                if i.created_at:
+                    try:
+                        dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
+                        if (datetime.now(timezone.utc) - dt).days > 7:
+                            continue
+                    except Exception:
+                        pass
+                items.append(i)
+                existing_ids.add(i.item_id)
+                new_items.append(i)
+            if new_items:
+                break
 
     data["items"] = sorted(items, key=_created_at_dt, reverse=True)
     data["limit"] = new_limit
