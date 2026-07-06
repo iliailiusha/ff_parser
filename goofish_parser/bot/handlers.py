@@ -250,22 +250,61 @@ async def _show_find_page(
     batch = items[start:start + FIND_ITEMS_PER_PAGE]
     rate = get_krw_to_rub()
 
-    lines = [f"🔍 *{query}* — стр. {page + 1}/{total} ({len(items)} шт.):\n"]
-    for i, item in enumerate(batch, start + 1):
+    # delete old messages from previous page
+    old_ids = context.user_data.pop(key + "_msg_ids", [])
+    for mid in old_ids:
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=mid)
+        except Exception:
+            pass
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+    new_ids = []
+    chat_id = update.effective_chat.id
+
+    for item in batch:
         price_rub = round(item.price_cny * rate)
         discount = ""
         if item.price_original_cny and item.price_original_cny > item.price_cny:
             d = round((1 - item.price_cny / item.price_original_cny) * 100)
             discount = f" 📉 -{d}%"
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
-        lines.append(
-            f"{i}. {item.title}\n"
-            f"💰{item.price_cny:,.0f}₩ ~{price_rub:.0f}₽{discount}{time_str}\n"
-            f"🔗 {item.url}\n"
+        brand_str = f"🏷 *{item.location}*\n" if item.location else ""
+        link_str = f"[🔗 Открыть на FruitsFamily]({item.url})"
+
+        caption = (
+            f"*{item.title}*\n"
+            f"{brand_str}"
+            f"💰 {item.price_cny:,.0f}₩ (~{price_rub:.0f}₽){discount}{time_str}\n"
+            f"{link_str}"
         )
 
-    text = "\n".join(lines)
+        if item.images:
+            try:
+                sent = await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=item.images[0],
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+                new_ids.append(sent.message_id)
+                continue
+            except Exception:
+                pass
 
+        # fallback: text-only if no image or photo send failed
+        sent = await context.bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        new_ids.append(sent.message_id)
+
+    # navigation message
     buttons = []
     row = []
     if page > 0:
@@ -277,34 +316,15 @@ async def _show_find_page(
         buttons.append(row)
     buttons.append([InlineKeyboardButton("❌ Закрыть", callback_data="find_pg:close")])
 
-    markup = InlineKeyboardMarkup(buttons)
+    nav = await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"🔍 *{query}* — стр. {page + 1}/{total}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    new_ids.append(nav.message_id)
 
-    # find first item with an image
-    first_img = next((item.images[0] for item in batch if item.images), None)
-
-    # delete old message
-    try:
-        await msg.delete()
-    except Exception:
-        pass
-
-    if first_img:
-        try:
-            await update.effective_chat.send_photo(
-                photo=first_img,
-                caption=text,
-                parse_mode="Markdown",
-                reply_markup=markup,
-            )
-        except Exception:
-            # fallback: send as text if photo fails
-            await update.effective_chat.send_message(
-                text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False,
-            )
-    else:
-        await update.effective_chat.send_message(
-            text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False,
-        )
+    context.user_data[key + "_msg_ids"] = new_ids
 
 
 async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -93,11 +93,17 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
     discount_rate = raw.get("discount_rate")
     created_at = raw.get("createdAt") or ""
 
+    ext_url = raw.get("external_url") or ""
+    if ext_url.startswith("http"):
+        url = ext_url
+    else:
+        url = f"https://fruitsfamily.com/products/{item_id}"
+
     return GoofishItem(
         item_id=item_id,
         title=f"{title}",
         price_cny=price,
-        url=f"https://fruitsfamily.com/products/{item_id}",
+        url=url,
         condition=condition or "",
         location=brand,
         badge=f"{like_count} ♥" if like_count else "",
