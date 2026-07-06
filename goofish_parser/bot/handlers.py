@@ -257,10 +257,9 @@ async def _show_find_page(
         if item.price_original_cny and item.price_original_cny > item.price_cny:
             d = round((1 - item.price_cny / item.price_original_cny) * 100)
             discount = f" 📉 -{d}%"
-        img_link = f" [🖼]({item.images[0]})" if item.images else ""
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
         lines.append(
-            f"{i}. {item.title}{img_link}\n"
+            f"{i}. {item.title}\n"
             f"💰{item.price_cny:,.0f}₩ ~{price_rub:.0f}₽{discount}{time_str}\n"
             f"🔗 {item.url}\n"
         )
@@ -280,14 +279,32 @@ async def _show_find_page(
 
     markup = InlineKeyboardMarkup(buttons)
 
+    # find first item with an image
+    first_img = next((item.images[0] for item in batch if item.images), None)
+
+    # delete old message
     try:
-        await msg.edit_text(text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False)
+        await msg.delete()
     except Exception:
-        new_msg = await update.effective_chat.send_message(
+        pass
+
+    if first_img:
+        try:
+            await update.effective_chat.send_photo(
+                photo=first_img,
+                caption=text,
+                parse_mode="Markdown",
+                reply_markup=markup,
+            )
+        except Exception:
+            # fallback: send as text if photo fails
+            await update.effective_chat.send_message(
+                text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False,
+            )
+    else:
+        await update.effective_chat.send_message(
             text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False,
         )
-        # Replace msg reference in user_data
-        context.user_data[key + "_msg_id"] = new_msg.message_id
 
 
 async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
