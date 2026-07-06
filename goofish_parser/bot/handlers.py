@@ -237,7 +237,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=20)
+        items = search_products_free_text(text, sort="NEW", limit=30)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
@@ -254,7 +254,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "query": text,
             "base_query": text,
             "korean_query": None,
-            "limit": 20,
+            "limit": 30,
             "max_reached": False,
         }
 
@@ -391,50 +391,30 @@ async def _load_more_items(context, key: str) -> list:
     data = context.user_data.get(key)
     if not data:
         return []
-    base_query = data["query"]
-    korean_query = data.get("korean_query")
+    api_query = data.get("korean_query") or data["query"]
     old_limit = data.get("limit", 10)
     new_limit = old_limit + 50
 
-    queries_to_try = []
-    if korean_query and korean_query != base_query:
-        queries_to_try.append(korean_query)
-    queries_to_try.append(base_query)
-    first_word = base_query.split()[0] if base_query.strip() else None
-    if first_word and first_word not in queries_to_try:
-        queries_to_try.append(first_word)
-
+    new_raw = search_products_free_text(
+        api_query, sort="NEW", limit=new_limit, auto_detect_clothing=False,
+    )
     items = data["items"]
     existing_ids = {i.item_id for i in items}
     from datetime import timezone
     new_items = []
-    tried_queries = set()
-
-    for sort_mode in ("NEW", "POPULAR"):
-        if new_items:
-            break
-        for q in queries_to_try:
-            if q in tried_queries:
-                continue
-            tried_queries.add(q)
-            new_raw = search_products_free_text(
-                q, sort=sort_mode, limit=new_limit, auto_detect_clothing=False,
-            )
-            for i in new_raw:
-                if i.item_id in existing_ids:
+    for i in new_raw:
+        if i.item_id in existing_ids:
+            continue
+        if i.created_at:
+            try:
+                dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - dt).days > 7:
                     continue
-                if i.created_at:
-                    try:
-                        dt = datetime.fromisoformat(i.created_at.replace("Z", "+00:00"))
-                        if (datetime.now(timezone.utc) - dt).days > 7:
-                            continue
-                    except Exception:
-                        pass
-                items.append(i)
-                existing_ids.add(i.item_id)
-                new_items.append(i)
-            if new_items:
-                break
+            except Exception:
+                pass
+        items.append(i)
+        existing_ids.add(i.item_id)
+        new_items.append(i)
 
     data["items"] = sorted(items, key=_created_at_dt, reverse=True)
     data["limit"] = new_limit
