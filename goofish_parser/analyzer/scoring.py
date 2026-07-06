@@ -4,8 +4,8 @@ from goofish_parser.scraper.models import GoofishItem, MarketPrice, ScoredItem
 
 
 def _rate() -> float:
-    from goofish_parser.services.exchange_rate import get_cny_to_rub
-    return get_cny_to_rub()
+    from goofish_parser.services.exchange_rate import get_krw_to_rub
+    return get_krw_to_rub()
 
 
 def score_item(item: GoofishItem, market: MarketPrice) -> Optional[ScoredItem]:

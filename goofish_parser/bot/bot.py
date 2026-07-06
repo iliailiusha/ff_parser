@@ -7,7 +7,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL
 from goofish_parser.bot.handlers import search_conversation, recent_command, help_command, rate_command, status_command
-from goofish_parser.bot.login_handler import login_command
 from goofish_parser.services.exchange_rate import update_rate_daily
 
 logger = logging.getLogger(__name__)
@@ -15,23 +14,21 @@ logger = logging.getLogger(__name__)
 
 async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
     rate = update_rate_daily()
-    logger.info(f"Daily CNY rate update: {rate:.2f} RUB")
-
-
-async def _set_commands(app: Application) -> None:
-    await app.bot.set_my_commands([
-        BotCommand("search", "🔍 Поиск товаров"),
-        BotCommand("login", "🔑 Войти в 闲鱼"),
-        BotCommand("status", "📊 Статус авторизации"),
-        BotCommand("rate", "💱 Курс CNY/RUB"),
-        BotCommand("recent", "🔥 Лучшие находки"),
-        BotCommand("help", "📖 Справка"),
-    ])
-    logger.info("Bot commands registered")
+    logger.info(f"Daily KRW rate update: {rate:.4f} RUB")
 
 
 def _build_app():
-    builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+    async def _post_init(app: Application) -> None:
+        await app.bot.set_my_commands([
+            BotCommand("search", "🔍 Поиск товаров"),
+            BotCommand("status", "📊 Статус API"),
+            BotCommand("rate", "💱 Курс KRW/RUB"),
+            BotCommand("recent", "🔥 Лучшие находки"),
+            BotCommand("help", "📖 Справка"),
+        ])
+        logger.info("Bot commands registered")
+
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(_post_init)
 
     if API_BASE_URL:
         base = API_BASE_URL.strip().rstrip("/")
@@ -52,7 +49,6 @@ def run_bot() -> None:
     app = _build_app()
 
     app.add_handler(search_conversation())
-    app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("recent", recent_command))
     app.add_handler(CommandHandler("rate", rate_command))
@@ -61,12 +57,7 @@ def run_bot() -> None:
     job_queue = app.job_queue
     if job_queue:
         job_queue.run_daily(daily_rate_update, time=time(10, 0, 0))
-        logger.info("Daily CNY rate update scheduled at 10:00 MSK")
+        logger.info("Daily KRW rate update scheduled at 10:00 MSK")
 
     logger.info("Bot started")
-
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(_set_commands(app))
-    loop.close()
-
     app.run_polling(allowed_updates=Update.ALL_TYPES)

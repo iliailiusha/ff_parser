@@ -1,7 +1,7 @@
 import re
 from typing import Optional
 
-from goofish_parser.scraper.models import GoofishItem, SearchCriteria
+from goofish_parser.scraper.models import GoofishItem, SearchCriteria, SearchResult
 from goofish_parser.scraper.session import search_page
 
 
@@ -33,16 +33,19 @@ def _filter_by_price(items: list[GoofishItem], criteria: SearchCriteria) -> list
     return filtered
 
 
-async def search_items(criteria: SearchCriteria) -> list[GoofishItem]:
+async def search_items(criteria: SearchCriteria) -> SearchResult:
     query = _build_search_query(criteria)
     result = await search_page(query, limit=criteria.limit)
 
     if result.get("requiresAuth"):
-        return []
-    if result.get("blocked"):
-        return []
+        return SearchResult(
+            requires_auth=True,
+            blocked=result.get("blocked", False),
+            error=result.get("error", "Authorization required"),
+        )
+
     if result.get("empty"):
-        return []
+        return SearchResult(empty=True)
 
     items = []
     for raw in result.get("items", []):
@@ -60,7 +63,8 @@ async def search_items(criteria: SearchCriteria) -> list[GoofishItem]:
         )
         items.append(item)
 
-    return _filter_by_price(items, criteria)
+    filtered = _filter_by_price(items, criteria)
+    return SearchResult(items=filtered, empty=len(filtered) == 0)
 
 
 async def search_by_brand_type(
@@ -69,7 +73,7 @@ async def search_by_brand_type(
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     limit: int = 30,
-) -> list[GoofishItem]:
+) -> SearchResult:
     criteria = SearchCriteria(
         brand=brand,
         item_type=item_type,

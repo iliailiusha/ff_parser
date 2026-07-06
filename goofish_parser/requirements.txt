@@ -1,9 +1,4 @@
 python-telegram-bot[job-queue]>=20.0
-playwright>=1.40
-curl-cffi>=0.7
 requests>=2.31
 python-dotenv>=1.0
 pydantic>=2.0
-aiofiles>=23.0
-cachetools>=5.3
-qrcode[pil]>=7.4

@@ -9,7 +9,7 @@ BRANDS = [
     "Converse", "Timberland", "Dr. Martens", "Asics", "Salomon",
 ]
 
-from goofish_parser.bot.translation import CLOTHING_RU_TO_CN
+from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 
 
 def build_brand_keyboard() -> InlineKeyboardMarkup:
@@ -26,7 +26,7 @@ def build_brand_keyboard() -> InlineKeyboardMarkup:
 
 
 def build_type_keyboard() -> InlineKeyboardMarkup:
-    types = list(CLOTHING_RU_TO_CN.keys())
+    types = list(CLOTHING_RU_TO_KO.keys())
     buttons = []
     row = []
     for t in types:
@@ -42,6 +42,6 @@ def build_type_keyboard() -> InlineKeyboardMarkup:
 def build_price_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton("⏭ Без цены", callback_data="price:skip")],
-        [InlineKeyboardButton("💰 Указать цену", callback_data="price:set")],
+        [InlineKeyboardButton("💰 Указать цену (₩)", callback_data="price:set")],
     ]
     return InlineKeyboardMarkup(buttons)

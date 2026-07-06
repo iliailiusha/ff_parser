@@ -34,7 +34,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             item_id TEXT UNIQUE NOT NULL,
             title TEXT NOT NULL,
-            price_cny REAL NOT NULL,
+            price_krw REAL NOT NULL,
             url TEXT NOT NULL,
             condition TEXT DEFAULT '',
             location TEXT DEFAULT '',
@@ -45,7 +45,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS scored_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             item_id TEXT UNIQUE NOT NULL,
-            market_avg_cny REAL NOT NULL,
+            market_avg_krw REAL NOT NULL,
             discount_pct REAL NOT NULL,
             price_rub REAL NOT NULL,
             market_avg_rub REAL NOT NULL,
@@ -85,7 +85,7 @@ def save_items(items: list[GoofishItem], search_query: str = "") -> None:
         try:
             conn.execute(
                 """INSERT OR IGNORE INTO items
-                   (item_id, title, price_cny, url, condition, location, badge, search_query, found_at)
+                   (item_id, title, price_krw, url, condition, location, badge, search_query, found_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (item.item_id, item.title, item.price_cny, item.url,
                  item.condition, item.location, item.badge, search_query, now),
@@ -102,7 +102,7 @@ def save_scored_items(scored: list[ScoredItem]) -> None:
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO scored_items
-                   (item_id, market_avg_cny, discount_pct, price_rub, market_avg_rub, score, created_at)
+                   (item_id, market_avg_krw, discount_pct, price_rub, market_avg_rub, score, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (s.item.item_id, s.market_avg_cny, s.discount_pct,
                  s.price_rub, s.market_avg_rub, s.score, now),
@@ -156,7 +156,7 @@ def set_rate_cache(cache_key: str, rate: float) -> None:
 def get_recent_deals(limit: int = 20) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
-        """SELECT i.*, s.discount_pct, s.market_avg_cny, s.price_rub, s.market_avg_rub, s.score
+        """SELECT i.*, s.discount_pct, s.market_avg_krw, s.price_rub, s.market_avg_rub, s.score
            FROM scored_items s
            JOIN items i ON i.item_id = s.item_id
            ORDER BY s.discount_pct DESC

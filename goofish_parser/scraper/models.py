@@ -13,6 +13,11 @@ class GoofishItem(BaseModel):
     images: list[str] = []
     seller_id: str = ""
     category_id: str = ""
+    price_original_cny: float = 0.0
+    discount_rate: Optional[float] = None
+    is_liked: bool = False
+    like_count: int = 0
+    size: str = ""
 
 
 class SearchCriteria(BaseModel):
@@ -21,6 +26,14 @@ class SearchCriteria(BaseModel):
     price_min_cny: Optional[float] = None
     price_max_cny: Optional[float] = None
     limit: int = 30
+
+
+class SearchResult(BaseModel):
+    items: list[GoofishItem] = []
+    requires_auth: bool = False
+    blocked: bool = False
+    empty: bool = False
+    error: str = ""
 
 
 class MarketPrice(BaseModel):
