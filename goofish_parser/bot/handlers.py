@@ -93,9 +93,13 @@ async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["type_ru"] = type_ru
     context.user_data["type_ko"] = type_ko
     brand = context.user_data.get("brand", "?")
+    is_find = context.user_data.get("find_mode")
+    price_prompt = (
+        "Укажи цену в рублях (₽) или пропусти:" if is_find
+        else "Укажи цену в корейских вонах (₩) или пропусти:"
+    )
     await query.edit_message_text(
-        f"Бренд: *{brand}*\nТип: *{type_ru}* → *{type_ko}*\n\n"
-        f"Укажи цену в корейских вонах (₩) или пропусти:",
+        f"Бренд: *{brand}*\nТип: *{type_ru}* → *{type_ko}*\n\n{price_prompt}",
         parse_mode="Markdown",
         reply_markup=build_price_keyboard(),
     )
@@ -106,15 +110,18 @@ async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     action = query.data.split(":", 1)[1]
+    is_find = context.user_data.get("find_mode")
     if action == "skip":
         context.user_data["price_min"] = None
         context.user_data["price_max"] = None
         sent = await query.edit_message_text("🔍 Ищу...")
         return await execute_search(update, context, query.message)
     else:
+        currency = "рублях (₽)" if is_find else "вонах (₩)"
+        example = "`1000`" if is_find else "`50000`"
         await query.edit_message_text(
-            "Введи минимальную цену в вонах (₩):\n"
-            "Например: `50000`\n\n"
+            f"Введи минимальную цену в {currency}:\n"
+            f"Например: {example}\n\n"
             "Или отправь /cancel чтобы отменить.",
             parse_mode="Markdown",
         )
@@ -128,9 +135,12 @@ async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except ValueError:
         await update.message.reply_text("❌ Введи число. Попробуй снова:")
         return PRICE_INPUT_MIN
+    is_find = context.user_data.get("find_mode")
+    currency = "рублях (₽)" if is_find else "вонах (₩)"
+    example = "`3000`" if is_find else "`300000`"
     await update.message.reply_text(
-        "Теперь введи максимальную цену в вонах (₩):\n"
-        "Например: `300000`\n"
+        f"Теперь введи максимальную цену в {currency}:\n"
+        f"Например: {example}\n"
         "Или отправь /skip чтобы пропустить.",
         parse_mode="Markdown",
     )
@@ -167,6 +177,11 @@ async def execute_search(
     try:
         is_find = context.user_data.pop("find_mode", None)
         if is_find:
+            rate = get_krw_to_rub()
+            if price_min is not None:
+                price_min = int(float(price_min) / rate)
+            if price_max is not None:
+                price_max = int(float(price_max) / rate)
             raw = search_products_free_text(
                 f"{brand} {type_ko}".strip(), sort="NEW", limit=100,
                 price_min=int(price_min) if price_min else None,
@@ -174,15 +189,33 @@ async def execute_search(
                 auto_detect_clothing=False,
             )
             items = raw
-        else:
-            result = await search_by_brand_type(
-                brand=brand,
-                item_type=type_ko,
-                price_min=price_min,
-                price_max=price_max,
-                limit=40,
-            )
-            items = result.items if result else []
+            if not items:
+                text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
+                if hasattr(msg, "edit_message_text"):
+                    await msg.edit_message_text(text, parse_mode="Markdown")
+                elif hasattr(msg, "edit_text"):
+                    await msg.edit_text(text, parse_mode="Markdown")
+                else:
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
+                return ConversationHandler.END
+            save_items(items, label)
+            key = f"find_conv_{update.effective_user.id}"
+            context.user_data[key] = {
+                "items": items,
+                "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
+                "query": label,
+            }
+            await _show_find_page(update, context, msg, key, 0)
+            return ConversationHandler.END
+
+        result = await search_by_brand_type(
+            brand=brand,
+            item_type=type_ko,
+            price_min=price_min,
+            price_max=price_max,
+            limit=40,
+        )
+        items = result.items if result else []
         if not items:
             text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
             if hasattr(msg, "edit_message_text"):
@@ -215,11 +248,12 @@ async def execute_search(
         rate = get_krw_to_rub()
         for s in scored[:5]:
             item = s.item
+            time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
             link = f"[🔍 Искать на FF](https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)})"
             seller = f" | [👤 Продавец]({item.url})" if item.url != "https://fruitsfamily.com" else ""
             caption = (
                 f"*{item.title}*\n"
-                f"💰 {item.price_cny:,.0f}₩ (~{round(item.price_cny * rate):.0f}₽)\n"
+                f"💰 {item.price_cny:,.0f}₩ (~{round(item.price_cny * rate):.0f}₽){time_str}\n"
                 f"{link}{seller}"
             )
             if item.images:
@@ -254,65 +288,6 @@ def _format_time(iso_str: str) -> str:
         return dt.strftime("%d.%m %H:%M")
     except Exception:
         return iso_str[:16]
-
-
-async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message:
-        return
-    text = " ".join(context.args) if context.args else ""
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    if not chat_id:
-        return
-
-    if not text:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="🔍 *Поиск новых товаров*\n\n"
-            "Используй: `/find <запрос>`\n"
-            "Например: `/find Nike`\n\n"
-            "Результаты сортируются по дате (самые свежие).",
-            parse_mode="Markdown",
-        )
-        return
-
-    msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
-
-    try:
-        items = search_products_free_text(text, sort="NEW", limit=100)
-        if not items:
-            await msg.edit_text(
-                f"😕 Ничего не найдено по запросу *{text}*.",
-                parse_mode="Markdown",
-            )
-            return
-
-        save_items(items, text)
-
-        key = f"find_{update.effective_user.id}"
-        context.user_data[key] = {
-            "items": items,
-            "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
-            "query": text,
-        }
-
-        # detect what the API was actually called with by checking if clothing was detected
-        import goofish_parser.ff_scraper.search as ff_search
-        cw = ff_search._find_clothing_keywords(text)
-        if cw:
-            ko_query = text
-            for w in cw:
-                ko_query = ko_query.replace(w, ff_search.CLOTHING_RU_TO_KO[w], 1)
-            context.user_data[key]["korean_query"] = ko_query
-
-        await _show_find_page(update, context, msg, key, 0)
-
-    except Exception as e:
-        logger.exception("Find error")
-        try:
-            await msg.edit_text(f"❌ Ошибка: {e}")
-        except Exception:
-            await context.bot.send_message(chat_id=chat_id, text=f"❌ Ошибка: {e}")
-
 
 async def _show_find_page(
     update: Update,
