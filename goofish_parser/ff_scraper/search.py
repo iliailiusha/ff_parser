@@ -91,6 +91,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
     images = raw.get("resizedSmallImages") or []
     like_count = raw.get("like_count") or 0
     discount_rate = raw.get("discount_rate")
+    created_at = raw.get("createdAt") or ""
 
     return GoofishItem(
         item_id=item_id,
@@ -104,6 +105,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem:
         category_id="",
         price_original_cny=original_price,
         discount_rate=discount_rate,
+        created_at=created_at,
     )
 
 

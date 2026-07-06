@@ -1,7 +1,8 @@
 import logging
+from datetime import datetime
 from typing import Optional
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, ConversationHandler, CallbackQueryHandler,
     MessageHandler, filters, CommandHandler,
@@ -19,6 +20,7 @@ from goofish_parser.storage.db import save_search, save_items, save_scored_items
 logger = logging.getLogger(__name__)
 
 BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX = range(5)
+FIND_ITEMS_PER_PAGE = 5
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -179,6 +181,16 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+def _format_time(iso_str: str) -> str:
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        return dt.strftime("%d.%m %H:%M")
+    except Exception:
+        return iso_str[:16]
+
+
 async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = " ".join(context.args) if context.args else ""
     if not text:
@@ -194,7 +206,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await update.message.reply_text(f"🔍 Ищу *{text}*...", parse_mode="Markdown")
 
     try:
-        items = search_products_free_text(text, sort="NEW", limit=20)
+        items = search_products_free_text(text, sort="NEW", limit=30)
         if not items:
             await msg.edit_text(
                 f"😕 Ничего не найдено по запросу *{text}*.",
@@ -203,31 +215,99 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         save_items(items, text)
-        market = calculate_market_price(items)
-        scored = score_items(items, market)
-        save_scored_items(scored)
 
-        out = [f"🔍 *{text}* — свежие ({len(items)} шт.):\n"]
-        rate = get_krw_to_rub()
-        for i, s in enumerate(scored[:15], 1):
-            emoji = "🔥" if s.discount_pct > 30 else ("✅" if s.discount_pct > 10 else "👍")
-            out.append(
-                f"{emoji} *{i}.* {s.item.title}\n"
-                f"💰 {s.item.price_cny:,.0f} ₩ (~{s.price_rub:.0f} ₽)"
-                f"{f' | 📉 {s.discount_pct:.0f}%' if s.discount_pct > 5 else ''}\n"
-                f"🔗 {s.item.url}\n"
-            )
-        out.append(f"\n💡 /help")
+        total_pages = (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE
+        key = f"find_{update.effective_user.id}"
+        context.user_data[key] = {
+            "items": items,
+            "total_pages": total_pages,
+            "query": text,
+        }
 
-        for chunk in _chunk_text("\n".join(out), 4000):
-            try:
-                await msg.edit_text(chunk, parse_mode="Markdown", disable_web_page_preview=True)
-            except Exception:
-                msg = await update.effective_chat.send_message(chunk, parse_mode="Markdown", disable_web_page_preview=True)
+        await _show_find_page(update, context, msg, key, 0)
 
     except Exception as e:
         logger.exception("Find error")
         await msg.edit_text(f"❌ Ошибка: {e}")
+
+
+async def _show_find_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    msg,
+    key: str,
+    page: int,
+) -> None:
+    data = context.user_data.get(key)
+    if not data:
+        await msg.edit_text("❌ Результаты поиска устарели. Попробуй /find заново.")
+        return
+
+    items = data["items"]
+    total = data["total_pages"]
+    query = data["query"]
+    start = page * FIND_ITEMS_PER_PAGE
+    batch = items[start:start + FIND_ITEMS_PER_PAGE]
+    rate = get_krw_to_rub()
+
+    lines = [f"🔍 *{query}* — стр. {page + 1}/{total} ({len(items)} шт.):\n"]
+    for i, item in enumerate(batch, start + 1):
+        price_rub = round(item.price_cny * rate)
+        discount = ""
+        if item.price_original_cny and item.price_original_cny > item.price_cny:
+            d = round((1 - item.price_cny / item.price_original_cny) * 100)
+            discount = f" 📉 -{d}%"
+        img_link = f" [🖼]({item.images[0]})" if item.images else ""
+        time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
+        lines.append(
+            f"{i}. {item.title}{img_link}\n"
+            f"💰{item.price_cny:,.0f}₩ ~{price_rub:.0f}₽{discount}{time_str}\n"
+            f"🔗 {item.url}\n"
+        )
+
+    text = "\n".join(lines)
+
+    buttons = []
+    row = []
+    if page > 0:
+        row.append(InlineKeyboardButton("◀️", callback_data=f"find_pg:{key}:{page - 1}"))
+    row.append(InlineKeyboardButton(f"{page + 1}/{total}", callback_data="find_pg:noop"))
+    if page < total - 1:
+        row.append(InlineKeyboardButton("▶️", callback_data=f"find_pg:{key}:{page + 1}"))
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("❌ Закрыть", callback_data="find_pg:close")])
+
+    markup = InlineKeyboardMarkup(buttons)
+
+    try:
+        await msg.edit_text(text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False)
+    except Exception:
+        new_msg = await update.effective_chat.send_message(
+            text, parse_mode="Markdown", reply_markup=markup, disable_web_page_preview=False,
+        )
+        # Replace msg reference in user_data
+        context.user_data[key + "_msg_id"] = new_msg.message_id
+
+
+async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "find_pg:noop":
+        return
+    if data == "find_pg:close":
+        await query.message.delete()
+        return
+
+    parts = data.split(":", 2)
+    if len(parts) != 3:
+        return
+    _, key, page_str = parts
+    page = int(page_str)
+
+    await _show_find_page(update, context, query.message, key, page)
 
 
 async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
