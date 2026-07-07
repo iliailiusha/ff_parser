@@ -32,7 +32,9 @@ def _bump_gen(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> int:
     return gen
 
 
-def _is_stale(context: ContextTypes.DEFAULT_TYPE, user_id: int, gen: int) -> bool:
+def _is_stale(context: ContextTypes.DEFAULT_TYPE, user_id: int, gen: int | None) -> bool:
+    if gen is None:
+        return False
     bd = context.application.bot_data
     return bd.get(_GEN_KEY, {}).get(user_id, 0) != gen
 
