@@ -10,7 +10,7 @@ from goofish_parser.bot.bot import run_bot
 from goofish_parser.storage.db import init_db
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)

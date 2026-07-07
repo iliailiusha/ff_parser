@@ -38,7 +38,7 @@ def _is_stale(context: ContextTypes.DEFAULT_TYPE, user_id: int, gen: int | None)
     bd = context.application.bot_data
     return bd.get(_GEN_KEY, {}).get(user_id, 0) != gen
 
-BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX = range(5)
+BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX, BRAND_INPUT = range(6)
 FIND_ITEMS_PER_PAGE = 5
 
 
@@ -99,6 +99,7 @@ async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
+    logger.debug("User %s clicked brand button: %s", user_id, query.data)
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
     brand = query.data.split(":", 1)[1]
@@ -110,6 +111,45 @@ async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
+    return TYPE_SELECT
+
+
+async def on_brand_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
+    query = update.callback_query
+    await query.answer()
+    logger.debug("User %s clicked custom brand button", user_id)
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    await query.edit_message_text(
+        "✏️ Напиши название своего бренда:\n\n"
+        "Например: `Marni`, `Margiela`, `Raf Simons`\n\n"
+        "Или отправь /cancel чтобы отменить.",
+        parse_mode="Markdown",
+    )
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    logger.debug("User %s moved to BRAND_INPUT state", user_id)
+    return BRAND_INPUT
+
+
+async def on_brand_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    brand = update.message.text.strip()
+    logger.debug("User %s entered custom brand: %s", user_id, brand)
+    context.user_data["brand"] = brand
+    await update.message.reply_text(
+        f"Бренд: *{brand}*\n\nТеперь выбери тип одежды:",
+        parse_mode="Markdown",
+        reply_markup=build_type_keyboard(),
+    )
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    logger.debug("User %s moved to TYPE_SELECT with brand=%s", user_id, brand)
     return TYPE_SELECT
 
 
@@ -567,7 +607,14 @@ def search_conversation() -> ConversationHandler:
             CommandHandler("find", find_start),
         ],
         states={
-            BRAND_SELECT: [CallbackQueryHandler(on_brand, pattern=r"^brand:")],
+            BRAND_SELECT: [
+                CallbackQueryHandler(on_brand_custom, pattern=r"^brand:custom$"),
+                CallbackQueryHandler(on_brand, pattern=r"^brand:"),
+            ],
+            BRAND_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_brand_text),
+                CommandHandler("cancel", cancel),
+            ],
             TYPE_SELECT: [CallbackQueryHandler(on_type, pattern=r"^type:")],
             PRICE_SELECT: [CallbackQueryHandler(on_price, pattern=r"^price:")],
             PRICE_INPUT_MIN: [
