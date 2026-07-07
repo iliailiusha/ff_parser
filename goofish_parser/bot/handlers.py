@@ -41,6 +41,7 @@ FIND_ITEMS_PER_PAGE = 5
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _bump_gen(context, update.effective_user.id)
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
 
@@ -93,8 +94,12 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     brand = query.data.split(":", 1)[1]
     context.user_data["brand"] = brand
     await query.edit_message_text(
@@ -102,12 +107,18 @@ async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         parse_mode="Markdown",
         reply_markup=build_type_keyboard(),
     )
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     return TYPE_SELECT
 
 
 async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     type_ru = query.data.split(":", 1)[1]
     type_ko = CLOTHING_RU_TO_KO.get(type_ru, type_ru)
     context.user_data["type_ru"] = type_ru
@@ -123,18 +134,25 @@ async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         parse_mode="Markdown",
         reply_markup=build_price_keyboard(find_mode=is_find),
     )
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     return PRICE_SELECT
 
 
 async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     action = query.data.split(":", 1)[1]
     if action == "skip":
         context.user_data["price_min"] = None
         context.user_data["price_max"] = None
         sent = await query.edit_message_text("🔍 Ищу...")
-        gen = context.user_data.get("_entry_gen")
+        if _is_stale(context, user_id, gen):
+            return ConversationHandler.END
         return await execute_search(update, context, query.message, gen=gen)
 
     if action == "rub":
@@ -158,10 +176,14 @@ async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "Или отправь /cancel чтобы отменить."
         )
     await query.edit_message_text(prompt, parse_mode="Markdown")
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     return PRICE_INPUT_MIN
 
 
 async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
     text = update.message.text.strip()
     try:
         context.user_data["price_min"] = float(text)
@@ -177,6 +199,8 @@ async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         "Или отправь /skip чтобы пропустить.",
         parse_mode="Markdown",
     )
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
     return PRICE_INPUT_MAX
 
 
@@ -464,8 +488,12 @@ def _created_at_dt(item) -> datetime:
 
 
 async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
+    if _is_stale(context, user_id, gen):
+        return
     data = query.data
 
     if data == "find_pg:noop":
@@ -479,10 +507,11 @@ async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     _, key, page_str = parts
     page = int(page_str)
 
-    await _show_find_page(update, context, query.message, key, page)
+    await _show_find_page(update, context, query.message, key, page, gen=gen)
 
 
 async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _bump_gen(context, update.effective_user.id)
     deals = get_recent_deals(20)
     if not deals:
         await update.message.reply_text("😕 Нет сохранённых находок. Используйте /search для поиска.")
@@ -499,6 +528,7 @@ async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _bump_gen(context, update.effective_user.id)
     from goofish_parser.ff_scraper.client import graphql
     test = graphql("{ getCategoriesCached(limit: 1) { id name } }")
     ok = "error" not in test
@@ -515,6 +545,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _bump_gen(context, update.effective_user.id)
     rate = get_krw_to_rub()
     fresh = fetch_krw_rate()
     if fresh is not None and abs(fresh - rate) > 0.0001:
