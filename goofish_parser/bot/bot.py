@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import os
+import threading
 from datetime import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -11,6 +14,23 @@ from goofish_parser.bot.handlers import search_conversation, recent_command, hel
 from goofish_parser.services.exchange_rate import update_rate_daily
 
 logger = logging.getLogger(__name__)
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def _start_health_server():
+    port = int(os.environ.get("PORT", "8080"))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    logger.info("Health check server listening on port %s", port)
+    server.serve_forever()
 
 
 async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -63,4 +83,5 @@ def run_bot() -> None:
         logger.info("Daily KRW rate update scheduled at 10:00 MSK")
 
     logger.info("Bot started")
+    threading.Thread(target=_start_health_server, daemon=True).start()
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -20,6 +20,22 @@ from goofish_parser.storage.db import save_search, save_items, save_scored_items
 
 logger = logging.getLogger(__name__)
 
+_GEN_KEY = "ff_gen"
+
+
+def _bump_gen(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> int:
+    bd = context.application.bot_data
+    if _GEN_KEY not in bd:
+        bd[_GEN_KEY] = {}
+    gen = bd[_GEN_KEY].get(user_id, 0) + 1
+    bd[_GEN_KEY][user_id] = gen
+    return gen
+
+
+def _is_stale(context: ContextTypes.DEFAULT_TYPE, user_id: int, gen: int) -> bool:
+    bd = context.application.bot_data
+    return bd.get(_GEN_KEY, {}).get(user_id, 0) != gen
+
 BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX = range(5)
 FIND_ITEMS_PER_PAGE = 5
 
@@ -29,6 +45,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = _bump_gen(context, update.effective_user.id)
+    context.user_data["_entry_gen"] = gen
     context.user_data.pop("find_mode", None)
     welcome = (
         "👋 Привет! Я бот для поиска выгодных товаров на FruitsFamily (韩国二手平台).\n\n"
@@ -42,6 +60,8 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = _bump_gen(context, update.effective_user.id)
+    context.user_data["_entry_gen"] = gen
     if context.args:
         text = " ".join(context.args)
         chat_id = update.effective_chat.id
@@ -58,7 +78,7 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
                 "query": text,
             }
-            await _show_find_page(update, context, msg, key, 0)
+            await _show_find_page(update, context, msg, key, 0, gen=gen)
         except Exception as e:
             logger.exception("Find error")
             await context.bot.send_message(chat_id=chat_id, text=f"❌ Ошибка: {e}")
@@ -114,7 +134,8 @@ async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data["price_min"] = None
         context.user_data["price_max"] = None
         sent = await query.edit_message_text("🔍 Ищу...")
-        return await execute_search(update, context, query.message)
+        gen = context.user_data.get("_entry_gen")
+        return await execute_search(update, context, query.message, gen=gen)
 
     if action == "rub":
         context.user_data["price_currency"] = "RUB"
@@ -170,14 +191,17 @@ async def on_price_max(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             await update.message.reply_text("❌ Введи число или /skip:")
             return PRICE_INPUT_MAX
     msg = await update.message.reply_text("🔍 Ищу...")
-    return await execute_search(update, context, msg)
+    gen = context.user_data.get("_entry_gen")
+    return await execute_search(update, context, msg, gen=gen)
 
 
 async def execute_search(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     msg,
+    gen: int | None = None,
 ) -> int:
+    user_id = update.effective_user.id
     brand = context.user_data.get("brand", "")
     type_ko = context.user_data.get("type_ko", "")
     type_ru = context.user_data.get("type_ru", "")
@@ -185,6 +209,9 @@ async def execute_search(
     price_max = context.user_data.get("price_max")
 
     label = f"{brand} {type_ru}"
+
+    def cancelled():
+        return gen is not None and _is_stale(context, user_id, gen)
 
     try:
         is_find = context.user_data.pop("find_mode", None)
@@ -202,6 +229,8 @@ async def execute_search(
                 price_max=int(price_max) if price_max else None,
                 auto_detect_clothing=False,
             )
+            if cancelled():
+                return ConversationHandler.END
             items = raw
             if not items:
                 text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
@@ -219,7 +248,7 @@ async def execute_search(
                 "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
                 "query": label,
             }
-            await _show_find_page(update, context, msg, key, 0)
+            await _show_find_page(update, context, msg, key, 0, gen=gen)
             return ConversationHandler.END
 
         result = await search_by_brand_type(
@@ -229,6 +258,8 @@ async def execute_search(
             price_max=price_max,
             limit=40,
         )
+        if cancelled():
+            return ConversationHandler.END
         items = result.items if result else []
         if not items:
             text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
@@ -257,10 +288,14 @@ async def execute_search(
             await msg.edit_text(text, parse_mode="Markdown", disable_web_page_preview=True)
         else:
             await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
+        if cancelled():
+            return ConversationHandler.END
 
         # send photos for top 5 deals
         rate = get_krw_to_rub()
         for s in scored[:5]:
+            if cancelled():
+                return ConversationHandler.END
             item = s.item
             time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
             link = f"[🔍 Искать на FF](https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)})"
@@ -309,7 +344,13 @@ async def _show_find_page(
     msg,
     key: str,
     page: int,
+    gen: int | None = None,
 ) -> None:
+    user_id = update.effective_user.id
+
+    def cancelled():
+        return gen is not None and _is_stale(context, user_id, gen)
+
     data = context.user_data.get(key)
     if not data:
         await msg.edit_text("❌ Результаты поиска устарели. Попробуй /find заново.")
@@ -345,6 +386,8 @@ async def _show_find_page(
         return
 
     for item in batch:
+        if cancelled():
+            return
         price_rub = round(item.price_cny * rate)
         discount = ""
         if item.price_original_cny and item.price_original_cny > item.price_cny:
@@ -385,6 +428,9 @@ async def _show_find_page(
             disable_web_page_preview=True,
         )
         new_ids.append(sent.message_id)
+
+    if cancelled():
+        return
 
     # navigation message
     buttons = []
