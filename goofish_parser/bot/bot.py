@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 import threading
-import time
+import time as time_module
 from datetime import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -90,7 +90,7 @@ def run_bot() -> None:
 
     delay = random.uniform(5, 15)
     logger.info("Delaying polling start by %.1fs to avoid 409 conflict", delay)
-    time.sleep(delay)
+    time_module.sleep(delay)
 
     logger.info("Bot started")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
