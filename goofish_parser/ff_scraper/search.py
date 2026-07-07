@@ -183,7 +183,7 @@ async def search_items(criteria: SearchCriteria) -> SearchResult:
     if criteria.price_max_cny is not None:
         price_max = int(criteria.price_max_cny)
 
-    items = search_products(
+    items = await search_products(
         query=query,
         sort="POPULAR",
         limit=criteria.limit,
@@ -217,7 +217,7 @@ async def search_by_brand_type(
     return await search_items(criteria)
 
 
-def search_products_free_text(
+async def search_products_free_text(
     query: str,
     sort: str = "NEW",
     limit: int = 30,
@@ -235,13 +235,13 @@ def search_products_free_text(
                 ko = CLOTHING_RU_TO_KO[cw]
                 search_query = search_query.replace(cw, ko, 1)
 
-    raw_items = search_products(query=search_query, sort=sort, limit=limit, show_only="selling",
-                                price_min=price_min, price_max=price_max)
+    raw_items = await search_products(query=search_query, sort=sort, limit=limit, show_only="selling",
+                                      price_min=price_min, price_max=price_max)
 
     # Fallback: if converted query returns too few, try the original query
     if not raw_items:
-        raw_items = search_products(query=query.strip(), sort=sort, limit=limit, show_only="selling",
-                                    price_min=price_min, price_max=price_max)
+        raw_items = await search_products(query=query.strip(), sort=sort, limit=limit, show_only="selling",
+                                          price_min=price_min, price_max=price_max)
 
     # Fallback: try similar clothing types
     if not raw_items and auto_detect_clothing:
@@ -252,8 +252,8 @@ def search_products_free_text(
                 for sim in similar:
                     ko = CLOTHING_RU_TO_KO.get(sim, sim)
                     fq = query.replace(cw, ko, 1)
-                    raw_items = search_products(query=fq, sort=sort, limit=limit, show_only="selling",
-                                                price_min=price_min, price_max=price_max)
+                    raw_items = await search_products(query=fq, sort=sort, limit=limit, show_only="selling",
+                                                      price_min=price_min, price_max=price_max)
                     if raw_items:
                         break
                 if raw_items:

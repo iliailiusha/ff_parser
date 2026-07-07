@@ -1,33 +1,32 @@
 import logging
-import json
-import urllib.request
-import ssl
 from typing import Optional
+
+import httpx
 
 GRAPHQL_URL = "https://web-server.production.fruitsfamily.com/graphql"
 logger = logging.getLogger(__name__)
-_ssl_ctx = ssl.create_default_context()
+
+_http_client = httpx.AsyncClient(
+    headers={
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0",
+        "Origin": "https://fruitsfamily.com",
+        "Referer": "https://fruitsfamily.com/",
+    },
+    timeout=15,
+)
 
 
-def graphql(query: str, variables: dict | None = None, timeout: int = 15) -> dict:
+async def graphql(query: str, variables: dict | None = None, timeout: int = 15) -> dict:
     payload = {"query": query, "variables": variables or {}}
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        GRAPHQL_URL, data=data,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0",
-            "Origin": "https://fruitsfamily.com",
-            "Referer": "https://fruitsfamily.com/",
-        },
-    )
     try:
-        resp = urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx)
-        return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8")[:500]
-        logger.error(f"GraphQL HTTP {e.code}: {body}")
-        return {"error": f"HTTP {e.code}: {body}"}
+        resp = await _http_client.post(GRAPHQL_URL, json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as e:
+        body = e.response.text[:500]
+        logger.error(f"GraphQL HTTP {e.response.status_code}: {body}")
+        return {"error": f"HTTP {e.response.status_code}: {body}"}
     except Exception as e:
         logger.error(f"GraphQL error: {e}")
         return {"error": str(e)}
@@ -111,7 +110,7 @@ query getNavData {
 """
 
 
-def search_products(
+async def search_products(
     query: str,
     sort: str = "POPULAR",
     limit: int = 30,
@@ -134,7 +133,7 @@ def search_products(
     if price_max is not None:
         variables["filter"]["price_max"] = price_max
 
-    result = graphql(SEARCH_QUERY, variables)
+    result = await graphql(SEARCH_QUERY, variables)
     if not isinstance(result, dict):
         logger.error(f"search_products: unexpected result type {type(result)}")
         return []
@@ -147,20 +146,20 @@ def search_products(
     return data.get("items", [])
 
 
-def get_autocomplete(query: str) -> dict:
-    result = graphql(AUTOCOMPLETE_QUERY, {"query": query})
+async def get_autocomplete(query: str) -> dict:
+    result = await graphql(AUTOCOMPLETE_QUERY, {"query": query})
     data = result.get("data") if isinstance(result, dict) else None
     return data.get("getAutocomplete", {}) if isinstance(data, dict) else {}
 
 
-def get_categories() -> list[dict]:
-    result = graphql(CATEGORIES_QUERY)
+async def get_categories() -> list[dict]:
+    result = await graphql(CATEGORIES_QUERY)
     data = result.get("data") if isinstance(result, dict) else None
     return data.get("getCategoriesCached", []) if isinstance(data, dict) else []
 
 
-def get_product_detail(product_id: int) -> dict:
-    result = graphql(PRODUCT_DETAIL_QUERY, {"productId": product_id})
+async def get_product_detail(product_id: int) -> dict:
+    result = await graphql(PRODUCT_DETAIL_QUERY, {"productId": product_id})
     data = result.get("data") if isinstance(result, dict) else None
     resp = data.get("seeProductResponse", {}) if isinstance(data, dict) else {}
     return resp.get("seeProduct", {}) if isinstance(resp, dict) else {}

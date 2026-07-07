@@ -43,7 +43,6 @@ FIND_ITEMS_PER_PAGE = 5
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _bump_gen(context, update.effective_user.id)
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
 
@@ -70,7 +69,7 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         chat_id = update.effective_chat.id
         msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
         try:
-            items = search_products_free_text(text, sort="NEW", limit=100)
+            items = await search_products_free_text(text, sort="NEW", limit=100)
             if not items:
                 await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
                 return ConversationHandler.END
@@ -249,7 +248,7 @@ async def execute_search(
                     price_min = int(float(price_min) / rate)
                 if price_max is not None:
                     price_max = int(float(price_max) / rate)
-            raw = search_products_free_text(
+            raw = await search_products_free_text(
                 f"{brand} {type_ko}".strip(), sort="NEW", limit=100,
                 price_min=int(price_min) if price_min else None,
                 price_max=int(price_max) if price_max else None,
@@ -513,7 +512,6 @@ async def find_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _bump_gen(context, update.effective_user.id)
     deals = get_recent_deals(20)
     if not deals:
         await update.message.reply_text("😕 Нет сохранённых находок. Используйте /search для поиска.")
@@ -530,9 +528,8 @@ async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _bump_gen(context, update.effective_user.id)
     from goofish_parser.ff_scraper.client import graphql
-    test = graphql("{ getCategoriesCached(limit: 1) { id name } }")
+    test = await graphql("{ getCategoriesCached(limit: 1) { id name } }")
     ok = "error" not in test
     await update.message.reply_text(
         "✅ *Статус: работает*\n\n"
@@ -547,7 +544,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _bump_gen(context, update.effective_user.id)
     rate = get_krw_to_rub()
     fresh = fetch_krw_rate()
     if fresh is not None and abs(fresh - rate) > 0.0001:
