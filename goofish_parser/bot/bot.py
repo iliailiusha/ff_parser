@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import random
 import threading
+import time
 from datetime import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -84,6 +86,11 @@ def run_bot() -> None:
         job_queue.run_daily(daily_rate_update, time=time(10, 0, 0))
         logger.info("Daily KRW rate update scheduled at 10:00 MSK")
 
-    logger.info("Bot started")
     threading.Thread(target=_start_health_server, daemon=True).start()
+
+    delay = random.uniform(5, 15)
+    logger.info("Delaying polling start by %.1fs to avoid 409 conflict", delay)
+    time.sleep(delay)
+
+    logger.info("Bot started")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
