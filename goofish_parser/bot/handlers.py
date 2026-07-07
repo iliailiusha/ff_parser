@@ -581,6 +581,7 @@ def search_conversation() -> ConversationHandler:
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )
 
 
