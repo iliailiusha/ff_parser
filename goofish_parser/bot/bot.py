@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import threading
 from datetime import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -27,10 +26,13 @@ class _HealthHandler(BaseHTTPRequestHandler):
 
 
 def _start_health_server():
-    port = int(os.environ.get("PORT", "8080"))
-    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
-    logger.info("Health check server listening on port %s", port)
-    server.serve_forever()
+    port = 7860
+    try:
+        server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+        logger.info("Health check server listening on 0.0.0.0:%s", port)
+        server.serve_forever()
+    except Exception:
+        logger.exception("Health check server failed to start on port %s", port)
 
 
 async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
