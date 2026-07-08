@@ -21,6 +21,7 @@ class GoofishItem(BaseModel):
     created_at: str = ""
     status: str = ""
     is_visible: bool = True
+    seller_extra_1h: int = 0
 
     @field_validator("location", "condition", "size", "status", mode="before")
     @classmethod

@@ -143,11 +143,8 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
         status = raw.get("status") or ""
         is_visible = bool(raw.get("is_visible", True))
 
-        ext_url = raw.get("external_url") or ""
-        if ext_url.startswith("http"):
-            url = ext_url
-        elif seller_id:
-            url = f"https://fruitsfamily.com/seller/{seller_id}"
+        if item_id:
+            url = f"https://fruitsfamily.com/products/{item_id}"
         else:
             url = f"https://fruitsfamily.com"
 

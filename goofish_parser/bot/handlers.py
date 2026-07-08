@@ -306,6 +306,7 @@ async def execute_search(
                 else:
                     await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
                 return ConversationHandler.END
+            items = _deduplicate_by_seller(items)
             save_items(items, label)
             key = f"find_conv_{update.effective_user.id}"
             context.user_data[key] = {
@@ -336,6 +337,7 @@ async def execute_search(
                 await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
             return ConversationHandler.END
 
+        items = _deduplicate_by_seller(items)
         save_search(brand, type_ru, price_min, price_max)
         save_items(items, label)
 
@@ -363,12 +365,14 @@ async def execute_search(
                 return ConversationHandler.END
             item = s.item
             time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
-            link = f"[🔍 Искать на FF](https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)})"
-            seller = f" | [👤 Продавец]({item.url})" if item.url != "https://fruitsfamily.com" else ""
+            prod_link = f"[🔍 Товар]({item.url})" if item.url else ""
+            sel_url = _seller_url(item.seller_id)
+            sel_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
+            extra_str = f" | +{item.seller_extra_1h} за 1ч" if item.seller_extra_1h else ""
             caption = (
                 f"*{item.title}*\n"
                 f"💰 {item.price_cny:,.0f}₩ (~{round(item.price_cny * rate):.0f}₽){time_str}\n"
-                f"{link}{seller}"
+                f"{prod_link}{sel_ref}{extra_str}"
             )
             if item.images:
                 try:
@@ -402,6 +406,45 @@ def _format_time(iso_str: str) -> str:
         return dt.strftime("%d.%m %H:%M")
     except Exception:
         return iso_str[:16]
+
+
+def _parse_dt(iso_str: str) -> datetime | None:
+    if not iso_str:
+        return None
+    try:
+        return datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _seller_url(seller_id: str) -> str:
+    if seller_id:
+        return f"https://fruitsfamily.com/seller/{seller_id}"
+    return ""
+
+
+def _deduplicate_by_seller(items: list) -> list:
+    groups: dict[str, list] = {}
+    for item in items:
+        sid = item.seller_id or ""
+        groups.setdefault(sid, []).append(item)
+
+    result = []
+    for sid, same_seller in groups.items():
+        same_seller.sort(key=lambda x: _parse_dt(x.created_at) or datetime.min, reverse=True)
+        best = same_seller[0]
+        best_time = _parse_dt(best.created_at)
+        count_1h = 0
+        if best_time and sid:
+            for other in same_seller:
+                t = _parse_dt(other.created_at)
+                if t and abs((best_time - t).total_seconds()) <= 3600:
+                    count_1h += 1
+        best.seller_extra_1h = max(0, count_1h - 1)
+        result.append(best)
+
+    result.sort(key=lambda x: _parse_dt(x.created_at) or datetime.min, reverse=True)
+    return result
 
 async def _show_find_page(
     update: Update,
@@ -460,16 +503,16 @@ async def _show_find_page(
             discount = f" 📉 -{d}%"
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
         brand_str = f"🏷 *{item.location}*\n" if item.location else ""
-        search_link = f"https://fruitsfamily.com/search?q={urllib.parse.quote(item.title)}"
-        sel_url = item.url if item.url and item.url not in ("https://fruitsfamily.com", "https://fruitsfamily.com/") else None
-        seller_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
-        link_str = f"[🔍 Искать на FF]({search_link}){seller_ref}"
+        prod_link = f"[🔍 Товар]({item.url})" if item.url else ""
+        sel_url = _seller_url(item.seller_id)
+        sel_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
+        extra_str = f" | +{item.seller_extra_1h} за 1ч" if item.seller_extra_1h else ""
 
         caption = (
             f"*{item.title}*\n"
             f"{brand_str}"
             f"💰 {item.price_cny:,.0f}₩ (~{price_rub:.0f}₽){discount}{time_str}\n"
-            f"{link_str}"
+            f"{prod_link}{sel_ref}{extra_str}"
         )
 
         if item.images:
