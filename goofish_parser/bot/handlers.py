@@ -429,6 +429,11 @@ def _deduplicate_by_seller(items: list) -> list:
         sid = item.seller_id or ""
         groups.setdefault(sid, []).append(item)
 
+    for sid, group in groups.items():
+        logger.debug("Dedup: seller=%s count=%d", sid or "?", len(group))
+        for it in group:
+            logger.debug("  item %s created_at=%s", it.item_id, it.created_at)
+
     result = []
     for sid, same_seller in groups.items():
         same_seller.sort(key=lambda x: _parse_dt(x.created_at) or datetime.min, reverse=True)
@@ -441,9 +446,11 @@ def _deduplicate_by_seller(items: list) -> list:
                 if t and abs((best_time - t).total_seconds()) <= 3600:
                     count_1h += 1
         best.seller_extra_1h = max(0, count_1h - 1)
+        logger.debug("Dedup: selected item %s, extra_1h=%d", best.item_id, best.seller_extra_1h)
         result.append(best)
 
     result.sort(key=lambda x: _parse_dt(x.created_at) or datetime.min, reverse=True)
+    logger.debug("Dedup: %d items -> %d items", len(items), len(result))
     return result
 
 async def _show_find_page(
