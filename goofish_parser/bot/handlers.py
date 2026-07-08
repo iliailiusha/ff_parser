@@ -374,6 +374,7 @@ async def execute_search(
                 f"💰 {item.price_cny:,.0f}₩ (~{round(item.price_cny * rate):.0f}₽){time_str}\n"
                 f"{prod_link}{sel_ref}{extra_str}"
             )
+            logger.debug("Caption: prod_link=%s sel_url=%s extra=%d", item.url, sel_url, item.seller_extra_1h)
             if item.images:
                 try:
                     await context.bot.send_photo(chat_id=chat_id, photo=item.images[0], caption=caption, parse_mode="Markdown")
@@ -515,6 +516,7 @@ async def _show_find_page(
         sel_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
         extra_str = f" | +{item.seller_extra_1h} за 1ч" if item.seller_extra_1h else ""
 
+        logger.debug("Caption: prod_link=%s sel_url=%s extra=%d created_at=%s", item.url, sel_url, item.seller_extra_1h, item.created_at)
         caption = (
             f"*{item.title}*\n"
             f"{brand_str}"
