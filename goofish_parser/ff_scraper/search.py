@@ -1,9 +1,12 @@
+import logging
 import re
 from datetime import datetime
 from typing import Optional
 
 from goofish_parser.scraper.models import GoofishItem, SearchCriteria, SearchResult
 from goofish_parser.ff_scraper.client import search_products, get_categories
+
+logger = logging.getLogger(__name__)
 
 
 CLOTHING_RU_TO_KO = {
