@@ -146,10 +146,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
         status = raw.get("status") or ""
         is_visible = bool(raw.get("is_visible", True))
 
-        ext_url = raw.get("external_url")
-        logger.debug("Raw external_url for item %s: %r (type=%s)", raw.get("id"), ext_url, type(ext_url).__name__)
-        ext_url = ext_url or ""
-        url = ext_url if ext_url.startswith("http") else ""
+        url = f"https://fruitsfamily.co/product/{raw.get('id', '')}"
 
         return GoofishItem(
             item_id=item_id,

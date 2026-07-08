@@ -420,7 +420,7 @@ def _parse_dt(iso_str: str) -> datetime | None:
 
 def _seller_url(seller_id: str) -> str:
     if seller_id:
-        return f"https://fruitsfamily.com/seller/{seller_id}"
+        return f"https://fruitsfamily.co/seller/{seller_id}"
     return ""
 
 
