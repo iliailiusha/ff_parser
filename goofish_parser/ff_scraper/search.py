@@ -2,6 +2,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional
+from urllib.parse import quote
 
 from goofish_parser.scraper.models import GoofishItem, SearchCriteria, SearchResult
 from goofish_parser.ff_scraper.client import search_products, get_categories
@@ -146,7 +147,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
         status = raw.get("status") or ""
         is_visible = bool(raw.get("is_visible", True))
 
-        url = raw.get("external_url") or f"https://fruitsfamily.co/product/{raw.get('id', '')}"
+        url = f"https://fruitsfamily.co/search?query={quote(title)}"
 
         return GoofishItem(
             item_id=item_id,
