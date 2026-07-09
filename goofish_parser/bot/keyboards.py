@@ -1,8 +1,4 @@
-import logging
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-logger = logging.getLogger(__name__)
 
 BRANDS = [
     "Nike", "Adidas", "New Balance", "Jordan", "Yeezy",
@@ -27,7 +23,6 @@ def build_brand_keyboard() -> InlineKeyboardMarkup:
     if row:
         buttons.append(row)
     buttons.append([InlineKeyboardButton("✏️ Свой бренд", callback_data="brand:custom")])
-    logger.debug("Brand keyboard built with %d predefined brands + custom button", len(BRANDS))
     return InlineKeyboardMarkup(buttons)
 
 

@@ -99,7 +99,6 @@ async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
-    logger.debug("User %s clicked brand button: %s", user_id, query.data)
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
     brand = query.data.split(":", 1)[1]
@@ -119,7 +118,6 @@ async def on_brand_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
-    logger.debug("User %s clicked custom brand button", user_id)
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
     await query.edit_message_text(
@@ -130,7 +128,6 @@ async def on_brand_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
-    logger.debug("User %s moved to BRAND_INPUT state", user_id)
     return BRAND_INPUT
 
 
@@ -140,7 +137,6 @@ async def on_brand_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
     brand = update.message.text.strip()
-    logger.debug("User %s entered custom brand: %s", user_id, brand)
     context.user_data["brand"] = brand
     await update.message.reply_text(
         f"Бренд: *{brand}*\n\nТеперь выбери тип одежды:",
@@ -149,7 +145,6 @@ async def on_brand_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     )
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
-    logger.debug("User %s moved to TYPE_SELECT with brand=%s", user_id, brand)
     return TYPE_SELECT
 
 
