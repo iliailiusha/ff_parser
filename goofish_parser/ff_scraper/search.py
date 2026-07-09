@@ -129,7 +129,7 @@ def _build_search_query(criteria: SearchCriteria) -> str:
     return " ".join(parts)
 
 
-def _ff_item_to_model(raw: dict) -> GoofishItem | None:
+def _ff_item_to_model(raw: dict, search_query: str = "") -> GoofishItem | None:
     try:
         price = _parse_price(raw.get("price", 0))
         original_price = _parse_price(raw.get("original_price") or 0)
@@ -147,7 +147,8 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
         status = raw.get("status") or ""
         is_visible = bool(raw.get("is_visible", True))
 
-        url = f"https://fruitsfamily.com/search/{quote(title)}?sort=RELEVANCE"
+        search_parts = [search_query, title] if search_query else [title]
+        url = f"https://fruitsfamily.com/search/{quote(' '.join(search_parts))}?sort=RELEVANCE"
 
         return GoofishItem(
             item_id=item_id,
@@ -192,7 +193,7 @@ async def search_items(criteria: SearchCriteria) -> SearchResult:
     if not items:
         return SearchResult(empty=True)
 
-    parsed = [_ff_item_to_model(i) for i in items]
+    parsed = [_ff_item_to_model(i, query) for i in items]
     parsed = [i for i in parsed if i is not None]
     filtered = [i for i in parsed if i.price_cny > 0]
     return SearchResult(items=filtered, empty=len(filtered) == 0)
@@ -260,7 +261,8 @@ async def search_products_free_text(
     if not raw_items:
         return []
 
-    parsed = [_ff_item_to_model(i) for i in raw_items]
+    ctx = query.strip()
+    parsed = [_ff_item_to_model(i, ctx) for i in raw_items]
     parsed = [i for i in parsed if i is not None]
     sold_keywords = ["sold", "reserved", "판매완료", "예약중"]
     filtered = [i for i in parsed if i.price_cny > 0 and i.status not in sold_keywords]
