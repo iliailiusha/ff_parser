@@ -180,6 +180,31 @@ async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return PRICE_SELECT
 
 
+async def on_type_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    type_ru = update.message.text.strip()
+    type_ko = CLOTHING_RU_TO_KO.get(type_ru, type_ru)
+    context.user_data["type_ru"] = type_ru
+    context.user_data["type_ko"] = type_ko
+    brand = context.user_data.get("brand", "?")
+    is_find = context.user_data.get("find_mode")
+    price_prompt = (
+        "Укажи цену в рублях (₽) или пропусти:" if is_find
+        else "Укажи цену в корейских вонах (₩) или пропусти:"
+    )
+    await update.message.reply_text(
+        f"Бренд: *{brand}*\nТип: *{type_ru}* → *{type_ko}*\n\n{price_prompt}",
+        parse_mode="Markdown",
+        reply_markup=build_price_keyboard(find_mode=is_find),
+    )
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    return PRICE_SELECT
+
+
 async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     gen = context.user_data.get("_entry_gen")
     user_id = update.effective_user.id
@@ -662,12 +687,16 @@ def search_conversation() -> ConversationHandler:
             BRAND_SELECT: [
                 CallbackQueryHandler(on_brand_custom, pattern=r"^brand:custom$"),
                 CallbackQueryHandler(on_brand, pattern=r"^brand:"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_brand_text),
             ],
             BRAND_INPUT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_brand_text),
                 CommandHandler("cancel", cancel),
             ],
-            TYPE_SELECT: [CallbackQueryHandler(on_type, pattern=r"^type:")],
+            TYPE_SELECT: [
+                CallbackQueryHandler(on_type, pattern=r"^type:"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_type_text),
+            ],
             PRICE_SELECT: [CallbackQueryHandler(on_price, pattern=r"^price:")],
             PRICE_INPUT_MIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_price_min),
