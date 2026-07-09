@@ -147,7 +147,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
         status = raw.get("status") or ""
         is_visible = bool(raw.get("is_visible", True))
 
-        url = f"https://fruitsfamily.co/search?query={quote(title)}"
+        url = f"https://fruitsfamily.com/search/{quote(title)}?sort=RELEVANCE"
 
         return GoofishItem(
             item_id=item_id,
