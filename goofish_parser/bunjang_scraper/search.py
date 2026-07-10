@@ -24,13 +24,11 @@ def _bunjang_item_to_model(raw: dict) -> Optional[GoofishItem]:
         condition_map = {"0": "중고", "1": "새제품", "2": "리퍼"}
         condition = condition_map.get(str(raw.get("condition", "")), "")
         seller_id = str(raw.get("uid", "") or "")
-        images_raw = raw.get("image", "")
+        image_url = raw.get("product_image", "")
         images = []
-        if images_raw:
-            if isinstance(images_raw, str):
-                images = [images_raw]
-            elif isinstance(images_raw, list):
-                images = images_raw
+        if image_url and image_url != "NO_IMAGE":
+            full_url = image_url.replace("{res}", "w512")
+            images = [full_url]
         badge = str(raw.get("badge", "") or "")
         created_at_timestamp = raw.get("update_time", 0) or raw.get("reg_time", 0)
         created_at = ""
