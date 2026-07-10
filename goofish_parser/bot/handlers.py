@@ -53,9 +53,10 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data["_entry_gen"] = gen
     context.user_data.pop("find_mode", None)
     welcome = (
-        "👋 Привет! Я бот для поиска выгодных товаров на азиатских площадках (Корея, Япония, ЮВА).\n\n"
+        "👋 Привет! Я бот для поиска выгодных товаров на корейских площадках б/у.\n\n"
+        "🇰🇷 FruitsFamily + Bunjang\n\n"
         "Выбери бренд чтобы начать:\n\n"
-        "💡 /settings — настроить какие площадки искать"
+        "💡 /settings — настроить площадки"
     )
     await update.message.reply_text(
         welcome,
@@ -98,7 +99,7 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data["find_mode"] = True
     await update.message.reply_text(
-        "👋 Выбери бренд для поиска:\n\n💡 Поиск по всем включённым площадкам. /settings чтобы настроить.",
+        "👋 Поиск по FruitsFamily + Bunjang. /settings чтобы настроить.",
         reply_markup=build_brand_keyboard(),
     )
     return BRAND_SELECT
@@ -676,20 +677,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     krw_rate = get_krw_to_rub()
-    from goofish_parser.config import USD_TO_RUB
-    jpy_rate = round(USD_TO_RUB / 150, 6)
-    sgd_rate = round(USD_TO_RUB / 1.35, 4)
 
     lines = [
-        "💱 *Курсы валют к RUB*\n",
+        "💱 *Курс KRW/RUB*\n",
         f"🇰🇷 1 ₩ (KRW) = *{krw_rate:.4f} ₽*",
         f"     1000 ₩ = *{krw_rate * 1000:.0f} ₽*",
-        f"🇯🇵 1 ¥ (JPY) ≈ *{jpy_rate:.4f} ₽*",
-        f"     100 ¥ = *{jpy_rate * 100:.0f} ₽*",
-        f"🇸🇬 1 SGD ≈ *{sgd_rate:.2f} ₽*",
-        f"🇺🇸 1 USD = *{USD_TO_RUB:.0f} ₽*",
         "",
-        "Источник: ЦБ РФ (cbr.ru), приблизительно",
+        "Источник: ЦБ РФ (cbr.ru)",
     ]
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
