@@ -2,6 +2,24 @@ from pydantic import BaseModel, field_validator
 from typing import Optional
 
 
+PLATFORM_INFO = {
+    "fruitsfamily": {"name": "FruitsFamily", "country": "🇰🇷 Корея", "currency": "₩", "url": "https://fruitsfamily.com"},
+    "mercari": {"name": "Mercari", "country": "🇯🇵 Япония", "currency": "¥", "url": "https://www.mercari.com"},
+    "bunjang": {"name": "Bunjang", "country": "🇰🇷 Корея", "currency": "₩", "url": "https://bunjang.co.kr"},
+    "carousell": {"name": "Carousell", "country": "🇸🇬 ЮВА", "currency": "SGD", "url": "https://www.carousell.com"},
+    "goofish": {"name": "闲鱼 Goofish", "country": "🇨🇳 Китай", "currency": "¥", "url": "https://www.goofish.com"},
+}
+
+COUNTRY_PLATFORMS = {
+    "🇯🇵 Япония": ["mercari"],
+    "🇰🇷 Корея": ["fruitsfamily", "bunjang"],
+    "🇸🇬 ЮВА": ["carousell"],
+    "🇨🇳 Китай": ["goofish"],
+}
+
+ALL_PLATFORMS = sorted(PLATFORM_INFO.keys())
+
+
 class GoofishItem(BaseModel):
     item_id: str
     title: str
@@ -22,6 +40,9 @@ class GoofishItem(BaseModel):
     status: str = ""
     is_visible: bool = True
     seller_extra_1h: int = 0
+    source: str = "fruitsfamily"
+    country: str = "🇰🇷 Корея"
+    currency: str = "₩"
 
     @field_validator("location", "condition", "size", "status", mode="before")
     @classmethod

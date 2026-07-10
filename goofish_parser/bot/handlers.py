@@ -14,9 +14,11 @@ from goofish_parser.analyzer.scoring import score_items
 from goofish_parser.bot.messages import format_search_result, HELP_TEXT
 from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboard, build_price_keyboard
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
-from goofish_parser.ff_scraper.search import search_by_brand_type, search_products_free_text
-from goofish_parser.services.exchange_rate import get_krw_to_rub, fetch_krw_rate
+from goofish_parser.ff_scraper.search import search_products_free_text
+from goofish_parser.services.multi_search import search_all_platforms, search_all_platforms_free_text, merge_platform_results
+from goofish_parser.services.exchange_rate import get_krw_to_rub
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
+from goofish_parser.scraper.models import PLATFORM_INFO
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,9 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data["_entry_gen"] = gen
     context.user_data.pop("find_mode", None)
     welcome = (
-        "👋 Привет! Я бот для поиска выгодных товаров на FruitsFamily (韩国二手平台).\n\n"
-        "Выбери бренд чтобы начать:"
+        "👋 Привет! Я бот для поиска выгодных товаров на азиатских площадках (Корея, Япония, ЮВА).\n\n"
+        "Выбери бренд чтобы начать:\n\n"
+        "💡 /settings — настроить какие площадки искать"
     )
     await update.message.reply_text(
         welcome,
@@ -67,18 +70,25 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if context.args:
         text = " ".join(context.args)
         chat_id = update.effective_chat.id
-        msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}*...", parse_mode="Markdown")
+        msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}* по всем площадкам...", parse_mode="Markdown")
         try:
-            items = await search_products_free_text(text, sort="NEW", limit=100)
+            user_id = update.effective_user.id
+            platform_results = await search_all_platforms_free_text(text, user_id=user_id, limit_per_platform=100)
+            items = merge_platform_results(platform_results, sort_by="date")
             if not items:
                 await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
                 return ConversationHandler.END
             save_items(items, text)
+            platform_summary = " | ".join(
+                f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
+                for p, its in platform_results.items() if its
+            )
             key = f"find_{update.effective_user.id}"
             context.user_data[key] = {
                 "items": items,
                 "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
                 "query": text,
+                "platform_summary": platform_summary,
             }
             await _show_find_page(update, context, msg, key, 0, gen=gen)
         except Exception as e:
@@ -88,7 +98,7 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data["find_mode"] = True
     await update.message.reply_text(
-        "👋 Выбери бренд для поиска новых товаров:",
+        "👋 Выбери бренд для поиска:\n\n💡 Поиск по всем включённым площадкам. /settings чтобы настроить.",
         reply_markup=build_brand_keyboard(),
     )
     return BRAND_SELECT
@@ -280,6 +290,19 @@ async def on_price_max(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return await execute_search(update, context, msg, gen=gen)
 
 
+def _source_tag(item) -> str:
+    info = PLATFORM_INFO.get(item.source, {})
+    c = info.get("country", item.country)
+    n = info.get("name", item.source)
+    return f"{c} {n}"
+
+
+def _format_price(item) -> str:
+    currency_symbols = {"₩": "₩", "¥": "¥", "SGD": "SGD$", "JPY": "¥"}
+    sym = currency_symbols.get(item.currency, item.currency)
+    return f"{item.price_cny:,.0f}{sym}"
+
+
 async def execute_search(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -300,75 +323,58 @@ async def execute_search(
 
     try:
         is_find = context.user_data.pop("find_mode", None)
+
+        if cancelled():
+            return ConversationHandler.END
+
+        await msg.edit_text("🔍 Поиск по всем площадкам...")
+
+        platform_results = await search_all_platforms(
+            brand=brand,
+            item_type_ru=type_ru,
+            user_id=user_id,
+            price_min=price_min,
+            price_max=price_max,
+            limit_per_platform=50,
+        )
+
+        if cancelled():
+            return ConversationHandler.END
+
+        all_items = merge_platform_results(platform_results, sort_by="date")
+
+        if not all_items:
+            text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры или проверьте /settings."
+            await msg.edit_message_text(text, parse_mode="Markdown")
+            return ConversationHandler.END
+
+        platform_summary = " | ".join(
+            f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
+            for p, its in platform_results.items() if its
+        )
+
         if is_find:
-            price_currency = context.user_data.pop("price_currency", None)
-            if price_currency == "RUB":
-                rate = get_krw_to_rub()
-                if price_min is not None:
-                    price_min = int(float(price_min) / rate)
-                if price_max is not None:
-                    price_max = int(float(price_max) / rate)
-            raw = await search_products_free_text(
-                f"{brand} {type_ko}".strip(), sort="NEW", limit=100,
-                price_min=int(price_min) if price_min else None,
-                price_max=int(price_max) if price_max else None,
-                auto_detect_clothing=False,
-            )
-            if cancelled():
-                return ConversationHandler.END
-            items = raw
-            if not items:
-                text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
-                if hasattr(msg, "edit_message_text"):
-                    await msg.edit_message_text(text, parse_mode="Markdown")
-                elif hasattr(msg, "edit_text"):
-                    await msg.edit_text(text, parse_mode="Markdown")
-                else:
-                    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
-                return ConversationHandler.END
-            items = _deduplicate_by_seller(items)
-            save_items(items, label)
+            save_items(all_items, label)
             key = f"find_conv_{update.effective_user.id}"
             context.user_data[key] = {
-                "items": items,
-                "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
+                "items": all_items,
+                "total_pages": (len(all_items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
                 "query": label,
+                "platform_summary": platform_summary,
             }
             await _show_find_page(update, context, msg, key, 0, gen=gen)
             return ConversationHandler.END
 
-        result = await search_by_brand_type(
-            brand=brand,
-            item_type=type_ko,
-            price_min=price_min,
-            price_max=price_max,
-            limit=40,
-        )
-        if cancelled():
-            return ConversationHandler.END
-        items = result.items if result else []
-        if not items:
-            text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры."
-            if hasattr(msg, "edit_message_text"):
-                await msg.edit_message_text(text, parse_mode="Markdown")
-            elif hasattr(msg, "edit_text"):
-                await msg.edit_text(text, parse_mode="Markdown")
-            else:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
-            return ConversationHandler.END
-
-        items = _deduplicate_by_seller(items)
         save_search(brand, type_ru, price_min, price_max)
-        save_items(items, label)
+        save_items(all_items, label)
 
-        market = calculate_market_price(items)
-        scored = score_items(items, market)
+        market = calculate_market_price(all_items)
+        scored = score_items(all_items, market)
 
         save_scored_items(scored)
-        text = format_search_result(scored, brand, type_ru)
+        text = format_search_result(scored, brand, type_ru, platform_summary)
         chat_id = update.effective_chat.id
 
-        # send summary text
         if hasattr(msg, "edit_message_text"):
             await msg.edit_message_text(text, parse_mode="Markdown", disable_web_page_preview=True)
         elif hasattr(msg, "edit_text"):
@@ -378,23 +384,21 @@ async def execute_search(
         if cancelled():
             return ConversationHandler.END
 
-        # send photos for top 5 deals
         rate = get_krw_to_rub()
         for s in scored[:5]:
             if cancelled():
                 return ConversationHandler.END
             item = s.item
+            source_name = _source_tag(item)
             time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
             prod_link = f"[🔍 Товар]({item.url})" if item.url else ""
-            sel_url = _seller_url(item.seller_id)
-            sel_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
-            extra_str = f" | +{item.seller_extra_1h} за 1ч" if item.seller_extra_1h else ""
+            price_str = _format_price(item)
             caption = (
+                f"{source_name}\n"
                 f"*{item.title}*\n"
-                f"💰 {item.price_cny:,.0f}₩ (~{round(item.price_cny * rate):.0f}₽){time_str}\n"
-                f"{prod_link}{sel_ref}{extra_str}"
+                f"💰 {price_str} (~{round(item.price_cny * rate):.0f}₽){time_str}\n"
+                f"{prod_link}"
             )
-            logger.debug("Caption: prod_link=%s sel_url=%s extra=%d", item.url, sel_url, item.seller_extra_1h)
             if item.images:
                 try:
                     await context.bot.send_photo(chat_id=chat_id, photo=item.images[0], caption=caption, parse_mode="Markdown")
@@ -438,9 +442,18 @@ def _parse_dt(iso_str: str) -> datetime | None:
         return None
 
 
-def _seller_url(seller_id: str) -> str:
-    if seller_id:
-        return f"https://fruitsfamily.co/seller/{seller_id}"
+def _seller_url(seller_id: str, source: str = "") -> str:
+    if not seller_id:
+        return ""
+    base_urls = {
+        "fruitsfamily": "https://fruitsfamily.co/seller",
+        "mercari": "https://www.mercari.com/u",
+        "bunjang": "https://m.bunjang.co.kr/users",
+        "carousell": "https://www.carousell.com/u",
+    }
+    base = base_urls.get(source, "")
+    if base:
+        return f"{base}/{seller_id}"
     return ""
 
 
@@ -532,15 +545,18 @@ async def _show_find_page(
         time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
         brand_str = f"🏷 *{item.location}*\n" if item.location else ""
         prod_link = f"[🔍 Товар]({item.url})" if item.url else ""
-        sel_url = _seller_url(item.seller_id)
+        sel_url = _seller_url(item.seller_id, item.source)
         sel_ref = f" | [👤 Продавец]({sel_url})" if sel_url else ""
         extra_str = f" | +{item.seller_extra_1h} за 1ч" if item.seller_extra_1h else ""
+        source_name = _source_tag(item)
+        price_str = _format_price(item)
 
         logger.debug("Caption: prod_link=%s sel_url=%s extra=%d created_at=%s", item.url, sel_url, item.seller_extra_1h, item.created_at)
         caption = (
+            f"{source_name}\n"
             f"*{item.title}*\n"
             f"{brand_str}"
-            f"💰 {item.price_cny:,.0f}₩ (~{price_rub:.0f}₽){discount}{time_str}\n"
+            f"💰 {price_str} (~{price_rub:.0f}₽){discount}{time_str}\n"
             f"{prod_link}{sel_ref}{extra_str}"
         )
 
@@ -580,9 +596,14 @@ async def _show_find_page(
     buttons.append(row)
     buttons.append([InlineKeyboardButton("❌ Закрыть", callback_data="find_pg:close")])
 
+    platform_summary = data.get("platform_summary", "")
+    nav_text = f"🔍 *{query}* — стр. {page + 1}/{total}"
+    if platform_summary:
+        nav_text += f"\n📡 {platform_summary}"
+
     nav = await context.bot.send_message(
         chat_id=chat_id,
-        text=f"🔍 *{query}* — стр. {page + 1}/{total}",
+        text=nav_text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
@@ -631,44 +652,46 @@ async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     lines = [f"🔥 *Последние выгодные находки ({len(deals)} шт.):*\n"]
     for i, d in enumerate(deals[:10], 1):
+        source = d.get("source", "fruitsfamily")
+        info = PLATFORM_INFO.get(source, {})
+        country = info.get("country", "")
         lines.append(
             f"{'🔥' if d['discount_pct'] > 30 else '✅'} *{i}.* {d['title']}\n"
-            f"💰 {d['price_krw']:,.0f} ₩ (~{d['price_rub']:.0f} ₽) | Скидка {d['discount_pct']:.1f}%\n"
+            f"{country} | 💰 {d['price_krw']:,.0f} {d.get('currency', '₩')} (~{d['price_rub']:.0f} ₽) | Скидка {d['discount_pct']:.1f}%\n"
         )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from goofish_parser.ff_scraper.client import graphql
-    test = await graphql("{ getCategoriesCached(limit: 1) { id name } }")
-    ok = "error" not in test
-    await update.message.reply_text(
-        "✅ *Статус: работает*\n\n"
-        "FruitsFamily API доступен.\n"
-        "Авторизация не требуется.\n"
-        "Используй /search чтобы начать."
-        if ok else
-        f"❌ *Статус: API недоступен*\n\n"
-        f"Ошибка: {test.get('error', 'неизвестно')}",
-        parse_mode="Markdown",
-    )
+    from goofish_parser.scraper.models import ALL_PLATFORMS, PLATFORM_INFO
+    lines = ["📊 *Статус площадок*\n"]
+    for p in ALL_PLATFORMS:
+        info = PLATFORM_INFO.get(p, {})
+        name = f"{info.get('country', '')} {info.get('name', p)}"
+        lines.append(f"• {name} — ✅ активен")
+    lines.append("\n💡 /settings — настроить площадки")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    rate = get_krw_to_rub()
-    fresh = fetch_krw_rate()
-    if fresh is not None and abs(fresh - rate) > 0.0001:
-        rate = fresh
+    krw_rate = get_krw_to_rub()
+    from goofish_parser.config import USD_TO_RUB
+    jpy_rate = round(USD_TO_RUB / 150, 6)
+    sgd_rate = round(USD_TO_RUB / 1.35, 4)
 
-    await update.message.reply_text(
-        f"💱 *Курс KRW/RUB*\n\n"
-        f"1 ₩ = *{rate:.4f} ₽*\n"
-        f"1000 ₩ = *{rate * 1000:.0f} ₽*\n"
-        f"Источник: ЦБ РФ (cbr.ru)\n"
-        f"Обновляется ежедневно в 10:00 MSK",
-        parse_mode="Markdown",
-    )
+    lines = [
+        "💱 *Курсы валют к RUB*\n",
+        f"🇰🇷 1 ₩ (KRW) = *{krw_rate:.4f} ₽*",
+        f"     1000 ₩ = *{krw_rate * 1000:.0f} ₽*",
+        f"🇯🇵 1 ¥ (JPY) ≈ *{jpy_rate:.4f} ₽*",
+        f"     100 ¥ = *{jpy_rate * 100:.0f} ₽*",
+        f"🇸🇬 1 SGD ≈ *{sgd_rate:.2f} ₽*",
+        f"🇺🇸 1 USD = *{USD_TO_RUB:.0f} ₽*",
+        "",
+        "Источник: ЦБ РФ (cbr.ru), приблизительно",
+    ]
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 def search_conversation() -> ConversationHandler:
