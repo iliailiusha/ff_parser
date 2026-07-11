@@ -168,7 +168,11 @@ async def search_all_platforms(
                 limit=limit_per_platform,
             )
             if result and result.items:
-                return result.items
+                items = result.items
+                if platform == "fruitsfamily" and brand:
+                    brand_lower = brand.lower()
+                    items = [i for i in items if brand_lower in i.location.lower()]
+                return items
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
