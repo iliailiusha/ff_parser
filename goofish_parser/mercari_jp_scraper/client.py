@@ -141,6 +141,9 @@ async def search_mercari_jp(
             logger.debug(f"Mercari first item full: {json.dumps(items[0], ensure_ascii=False)[:500]}")
 
             for item in items:
+                item_id = item.get("id", "")
+                if not item_id.startswith("m"):
+                    continue
                 all_items.append(_remap_item(item))
                 if len(all_items) >= limit:
                     logger.info(f"Mercari JP API found {len(all_items)} items")
@@ -151,7 +154,7 @@ async def search_mercari_jp(
                 break
             payload["pageToken"] = next_token
 
-    logger.info(f"Mercari JP API found {len(all_items)} items")
+    logger.info(f"Mercari JP API found {len(all_items)} items (filtered from API results)")
     return all_items
 
 
