@@ -5,3 +5,12 @@ __pycache__
 logs.txt
 data/
 **/__pycache__/
+mercari_*.txt
+mercari_*.html
+test_mercari*.py
+test_rsc*.py
+test_playwright.py
+test_curl*.py
+test_api*.py
+test_apis.py
+playwright_results.txt

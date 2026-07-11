@@ -50,7 +50,7 @@ def _build_app():
             BotCommand("find", "🔍 Быстрый поиск"),
             BotCommand("settings", "⚙️ Настройки площадок"),
             BotCommand("status", "📊 Статус"),
-            BotCommand("rate", "💱 Курс"),
+            BotCommand("rate", "💱 Курсы валют"),
             BotCommand("recent", "🔥 Находки"),
             BotCommand("help", "📖 Справка"),
         ])

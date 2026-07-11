@@ -16,7 +16,7 @@ from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboa
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 from goofish_parser.ff_scraper.search import search_products_free_text
 from goofish_parser.services.multi_search import search_all_platforms, search_all_platforms_free_text, merge_platform_results
-from goofish_parser.services.exchange_rate import get_krw_to_rub
+from goofish_parser.services.exchange_rate import get_krw_to_rub, get_rate_to_rub
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
 from goofish_parser.scraper.models import PLATFORM_INFO
 
@@ -53,8 +53,8 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data["_entry_gen"] = gen
     context.user_data.pop("find_mode", None)
     welcome = (
-        "👋 Привет! Я бот для поиска выгодных товаров на корейских площадках б/у.\n\n"
-        "🇰🇷 FruitsFamily + Bunjang\n\n"
+        "👋 Привет! Я бот для поиска выгодных товаров на азиатских площадках б/у.\n\n"
+        "🇰🇷 FruitsFamily + Bunjang | 🇸🇬 Carousell | 🇯🇵 Mercari JP\n\n"
         "Выбери бренд чтобы начать:\n\n"
         "💡 /settings — настроить площадки"
     )
@@ -99,7 +99,7 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data["find_mode"] = True
     await update.message.reply_text(
-        "👋 Поиск по FruitsFamily + Bunjang. /settings чтобы настроить.",
+        "👋 Поиск по FruitsFamily + Bunjang + Carousell + Mercari JP. /settings чтобы настроить.",
         reply_markup=build_brand_keyboard(),
     )
     return BRAND_SELECT
@@ -299,8 +299,10 @@ def _source_tag(item) -> str:
 
 
 def _format_price(item) -> str:
-    currency_symbols = {"₩": "₩", "¥": "¥", "SGD": "SGD$", "JPY": "¥"}
+    currency_symbols: dict[str, str] = {"₩": "₩", "¥": "¥", "SGD": "SGD$", "JPY": "¥"}
     sym = currency_symbols.get(item.currency, item.currency)
+    if item.currency == "SGD":
+        return f"SGD${item.price_cny:,.0f}"
     return f"{item.price_cny:,.0f}{sym}"
 
 
@@ -385,11 +387,11 @@ async def execute_search(
         if cancelled():
             return ConversationHandler.END
 
-        rate = get_krw_to_rub()
         for s in scored[:5]:
             if cancelled():
                 return ConversationHandler.END
             item = s.item
+            rate = get_rate_to_rub(item.currency)
             source_name = _source_tag(item)
             time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
             prod_link = f"[🔍 Товар]({item.url})" if item.url else ""
@@ -450,7 +452,8 @@ def _seller_url(seller_id: str, source: str = "") -> str:
         "fruitsfamily": "https://fruitsfamily.co/seller",
         "mercari": "https://www.mercari.com/u",
         "bunjang": "https://m.bunjang.co.kr/users",
-        "carousell": "https://www.carousell.com/u",
+        "carousell": "https://www.carousell.sg/u",
+        "mercari_jp": "https://jp.mercari.com/user/profile",
     }
     base = base_urls.get(source, "")
     if base:
@@ -512,8 +515,6 @@ async def _show_find_page(
     data["total_pages"] = total
     start = page * FIND_ITEMS_PER_PAGE
     batch = items[start:start + FIND_ITEMS_PER_PAGE]
-    rate = get_krw_to_rub()
-
     # delete old messages from previous page
     old_ids = context.user_data.pop(key + "_msg_ids", [])
     for mid in old_ids:
@@ -538,6 +539,7 @@ async def _show_find_page(
     for item in batch:
         if cancelled():
             return
+        rate = get_rate_to_rub(item.currency)
         price_rub = round(item.price_cny * rate)
         discount = ""
         if item.price_original_cny and item.price_original_cny > item.price_cny:
@@ -677,11 +679,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     krw_rate = get_krw_to_rub()
+    sgd_rate = get_rate_to_rub("SGD")
+    jpy_rate = get_rate_to_rub("JPY")
 
     lines = [
-        "💱 *Курс KRW/RUB*\n",
-        f"🇰🇷 1 ₩ (KRW) = *{krw_rate:.4f} ₽*",
-        f"     1000 ₩ = *{krw_rate * 1000:.0f} ₽*",
+        "💱 *Курсы валют к RUB*\n",
+        f"🇰🇷 1 ₩ (KRW) = *{krw_rate:.4f} ₽*  |  1000 ₩ = *{krw_rate * 1000:.0f} ₽*",
+        f"🇸🇬 1 SGD = *{sgd_rate:.2f} ₽*",
+        f"🇯🇵 1 ¥ (JPY) = *{jpy_rate:.4f} ₽*  |  100 ¥ = *{jpy_rate * 100:.0f} ₽*",
         "",
         "Источник: ЦБ РФ (cbr.ru)",
     ]

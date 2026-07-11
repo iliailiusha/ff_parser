@@ -5,10 +5,14 @@ from typing import Optional
 PLATFORM_INFO = {
     "fruitsfamily": {"name": "FruitsFamily", "country": "🇰🇷 Корея", "currency": "₩", "url": "https://fruitsfamily.com"},
     "bunjang": {"name": "Bunjang", "country": "🇰🇷 Корея", "currency": "₩", "url": "https://bunjang.co.kr"},
+    "carousell": {"name": "Carousell", "country": "🇸🇬 Сингапур", "currency": "SGD", "url": "https://www.carousell.sg"},
+    "mercari_jp": {"name": "Mercari JP", "country": "🇯🇵 Япония", "currency": "¥", "url": "https://jp.mercari.com"},
 }
 
 COUNTRY_PLATFORMS = {
     "🇰🇷 Корея": ["fruitsfamily", "bunjang"],
+    "🇸🇬 Сингапур": ["carousell"],
+    "🇯🇵 Япония": ["mercari_jp"],
 }
 
 ALL_PLATFORMS = sorted(PLATFORM_INFO.keys())

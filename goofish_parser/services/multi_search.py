@@ -11,11 +11,15 @@ logger = logging.getLogger(__name__)
 PLATFORM_LANG: dict[str, str] = {
     "fruitsfamily": "ko",
     "bunjang": "ko",
+    "carousell": "en",
+    "mercari_jp": "ja",
 }
 
 PLATFORM_SEARCHERS: dict[str, str] = {
     "fruitsfamily": "goofish_parser.ff_scraper.search",
     "bunjang": "goofish_parser.bunjang_scraper.search",
+    "carousell": "goofish_parser.carousell_scraper.search",
+    "mercari_jp": "goofish_parser.mercari_jp_scraper.search",
 }
 
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO

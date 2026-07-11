@@ -12,6 +12,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID", "")
 
 KRW_TO_RUB_FALLBACK = float(os.getenv("KRW_TO_RUB", "0.060"))
+SGD_TO_RUB_FALLBACK = float(os.getenv("SGD_TO_RUB", "60"))
+JPY_TO_RUB_FALLBACK = float(os.getenv("JPY_TO_RUB", "0.55"))
 USD_TO_RUB = float(os.getenv("USD_TO_RUB", "85"))
 
 API_BASE_URL = os.getenv("API_BASE_URL", "")

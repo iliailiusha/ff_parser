@@ -10,7 +10,12 @@ license: mit
 
 # FruitsFamily Parser Bot
 
-Telegram бот для поиска выгодных товаров на корейском маркетплейсе [FruitsFamily](https://fruitsfamily.com).
+Telegram бот для поиска выгодных товаров на азиатских маркетплейсах б/у:
+
+🇰🇷 FruitsFamily (Корея)
+🇰🇷 Bunjang (Корея)
+🇸🇬 Carousell (Сингапур/ЮВА)
+🇯🇵 Mercari JP (Япония)
 
 ## Команды
 

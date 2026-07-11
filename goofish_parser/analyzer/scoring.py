@@ -3,9 +3,9 @@ from typing import Optional
 from goofish_parser.scraper.models import GoofishItem, MarketPrice, ScoredItem
 
 
-def _rate() -> float:
-    from goofish_parser.services.exchange_rate import get_krw_to_rub
-    return get_krw_to_rub()
+def _rate(currency: str = "₩") -> float:
+    from goofish_parser.services.exchange_rate import get_rate_to_rub
+    return get_rate_to_rub(currency)
 
 
 def score_item(item: GoofishItem, market: MarketPrice) -> Optional[ScoredItem]:
@@ -13,7 +13,7 @@ def score_item(item: GoofishItem, market: MarketPrice) -> Optional[ScoredItem]:
         return None
 
     discount_pct = round((1 - item.price_cny / market.avg_price_cny) * 100, 1)
-    rate = _rate()
+    rate = _rate(item.currency)
 
     return ScoredItem(
         item=item,

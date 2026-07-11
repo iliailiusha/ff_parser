@@ -58,6 +58,8 @@ HELP_TEXT = """
 
 🇰🇷 FruitsFamily (Корея)
 🇰🇷 Bunjang (Корея)
+🇸🇬 Carousell (Сингапур/ЮВА)
+🇯🇵 Mercari JP (Япония)
 
 *Команды:*
 `/start` или `/search` — меню поиска (бренд → тип → цена)
