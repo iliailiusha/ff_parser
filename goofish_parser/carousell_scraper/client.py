@@ -4,7 +4,7 @@ import re
 from typing import Any, Optional
 from urllib.parse import quote
 
-from curl_cffi.requests import AsyncSession
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -28,41 +28,93 @@ async def search_carousell(
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,
 ) -> list[dict]:
-    search_url = f"https://www.carousell.sg/search/{quote(query)}"
+    items = await _try_curl_cffi(query)
+    if items:
+        return items
 
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-SG,en;q=0.9,zh-SG;q=0.8,zh;q=0.7,en-GB;q=0.6,en-US;q=0.5",
-        "Referer": "https://www.carousell.sg/",
-    }
+    items = await _try_httpx(query)
+    if items:
+        return items
 
-    async with AsyncSession() as session:
-        try:
-            resp = await session.get(
+    logger.warning("Carousell: all fetch methods failed, returning empty")
+    return []
+
+
+async def _try_curl_cffi(query: str) -> Optional[list[dict]]:
+    try:
+        from curl_cffi.requests import AsyncSession
+
+        search_url = f"https://www.carousell.sg/search/{quote(query)}"
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-SG,en;q=0.9",
+            "Referer": "https://www.carousell.sg/",
+        }
+
+        async with AsyncSession() as session:
+            await session.get(
                 "https://www.carousell.sg/",
                 headers=headers,
                 impersonate="chrome124",
-                timeout=30,
+                timeout=15,
             )
-        except Exception as e:
-            logger.warning(f"Carousell homepage request failed: {e}")
 
-        try:
             resp = await session.get(
                 search_url,
                 headers=headers,
                 impersonate="chrome124",
-                timeout=30,
+                timeout=20,
             )
-            resp.raise_for_status()
-            html = resp.text
-        except Exception as e:
-            logger.error(f"Carousell search page error: {e}")
-            return []
+            if resp.status_code != 200:
+                logger.warning(f"Carousell curl_cffi returned {resp.status_code}")
+                return None
 
-        items = _extract_from_html(html)
-        logger.info(f"Carousell HTML scrape found {len(items)} items")
-        return items
+            html = resp.text
+            items = _extract_from_html(html)
+            if items:
+                logger.info(f"Carousell curl_cffi: {len(items)} items")
+                return items
+    except Exception as e:
+        logger.warning(f"Carousell curl_cffi failed: {e}")
+
+    return None
+
+
+async def _try_httpx(query: str) -> Optional[list[dict]]:
+    search_url = f"https://www.carousell.sg/search/{quote(query)}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-SG,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.carousell.sg/",
+        "Sec-Ch-Ua": '"Not/A)Brand";v="99", "Google Chrome";v="125", "Chromium";v="125"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            await client.get("https://www.carousell.sg/", headers=headers)
+            resp = await client.get(search_url, headers=headers)
+            if resp.status_code != 200:
+                logger.warning(f"Carousell httpx returned {resp.status_code}")
+                return None
+
+            html = resp.text
+            items = _extract_from_html(html)
+            if items:
+                logger.info(f"Carousell httpx: {len(items)} items")
+                return items
+    except Exception as e:
+        logger.warning(f"Carousell httpx failed: {e}")
+
+    return None
 
 
 def _extract_from_html(html: str) -> list[dict]:
@@ -78,7 +130,7 @@ def _extract_from_html(html: str) -> list[dict]:
         r'<a[^>]*href=["\'](/p/[^"\']+)["\'][^>]*>.*?'
         r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>.*?'
         r'<p[^>]*title=["\']([^"\']+)["\'][^>]*>.*?'
-        r'人民币|S\$?\s*([0-9,]+)',
+        r'[S$]\s*([0-9,]+)',
         re.DOTALL,
     )
 
@@ -86,7 +138,7 @@ def _extract_from_html(html: str) -> list[dict]:
         item_url = match.group(1)
         img_url = match.group(2)
         title = match.group(3)
-        price_str = match.group(4).replace(",", "") if match.group(4) else "0"
+        price_str = match.group(4).replace(",", "")
 
         item_id = item_url.split("/")[-1] if "/" in item_url else item_url
         try:

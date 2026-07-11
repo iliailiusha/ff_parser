@@ -30,7 +30,7 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
                     images.append(p)
 
         status = str(raw.get("status", "") or "")
-        created_at_str = str(raw.get("created_at", "") or raw.get("listingTime", "") or raw.get("listing_time", ""))
+        created_at_str = str(raw.get("created_at", "") or raw.get("created", "") or raw.get("listingTime", "") or raw.get("listing_time", ""))
         if created_at_str and created_at_str.isdigit():
             from datetime import datetime
             created_at_str = datetime.fromtimestamp(int(created_at_str)).isoformat()
