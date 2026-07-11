@@ -137,7 +137,8 @@ async def search_mercari_jp(
                 logger.debug(f"Mercari response data: {json.dumps(data, ensure_ascii=False)[:300]}")
                 break
 
-            logger.debug(f"Mercari first item sample: id={items[0].get('id')} name={items[0].get('name')}")
+            logger.debug(f"Mercari first item keys: {list(items[0].keys())}")
+            logger.debug(f"Mercari first item full: {json.dumps(items[0], ensure_ascii=False)[:500]}")
 
             for item in items:
                 all_items.append(_remap_item(item))
