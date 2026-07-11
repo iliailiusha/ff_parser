@@ -41,6 +41,8 @@ class GoofishItem(BaseModel):
     source: str = "fruitsfamily"
     country: str = "🇰🇷 Корея"
     currency: str = "₩"
+    alt_sources: list[str] = []
+    alt_urls: list[str] = []
 
     @field_validator("location", "condition", "size", "status", mode="before")
     @classmethod

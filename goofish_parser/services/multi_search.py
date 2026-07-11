@@ -247,6 +247,25 @@ async def search_all_platforms_free_text(
     return results
 
 
+def _merge_cross_platform(items: list[GoofishItem]) -> list[GoofishItem]:
+    groups: dict[str, list[GoofishItem]] = {}
+    for item in items:
+        key = f"{item.title.lower().strip()}|{item.price_cny}"
+        groups.setdefault(key, []).append(item)
+
+    merged: list[GoofishItem] = []
+    for group in groups.values():
+        primary = group[0]
+        for dup in group[1:]:
+            pn = PLATFORM_INFO.get(dup.source, {}).get("name", dup.source)
+            if pn not in primary.alt_sources:
+                primary.alt_sources.append(pn)
+            if dup.url not in primary.alt_urls:
+                primary.alt_urls.append(dup.url)
+        merged.append(primary)
+    return merged
+
+
 def merge_platform_results(
     results: dict[str, list[GoofishItem]],
     sort_by: str = "price",
@@ -261,6 +280,7 @@ def merge_platform_results(
         all_items.extend(items)
 
     all_items = _deduplicate(all_items)
+    all_items = _merge_cross_platform(all_items)
 
     if sort_by == "price":
         all_items.sort(key=lambda x: x.price_cny)

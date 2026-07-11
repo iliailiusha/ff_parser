@@ -601,8 +601,13 @@ async def execute_search(
             item = s.item
             rate = get_rate_to_rub(item.currency)
             source_name = _source_tag(item)
+            if item.alt_sources:
+                source_name += "+" + "+".join(item.alt_sources)
             time_str = f" 🕐{_format_time(item.created_at)}" if item.created_at else ""
             prod_link = f"[🔍 Товар]({item.url})" if item.url else ""
+            if item.alt_urls:
+                for alt_url in item.alt_urls:
+                    prod_link += f" | [🔄]({alt_url})"
             price_str = _format_price(item)
             caption = (
                 f"{source_name}\n"
