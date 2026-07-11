@@ -169,9 +169,12 @@ async def search_all_platforms(
             )
             if result and result.items:
                 items = result.items
-                if platform == "fruitsfamily" and brand:
+                if brand:
                     brand_lower = brand.lower()
-                    items = [i for i in items if brand_lower in i.location.lower()]
+                    items = [i for i in items if (
+                        brand_lower in i.location.lower() or
+                        brand_lower in i.title.lower()
+                    )]
                 return items
             return []
         except Exception as e:
