@@ -99,9 +99,6 @@ async def search_mercari_jp(
     if price_max is not None:
         payload["searchCondition"]["priceMax"] = price_max
 
-    # convert booleans to strings like Mercari expects
-    payload = _convert_booleans(payload)
-
     all_items: list[dict] = []
     max_pages = 3
 
