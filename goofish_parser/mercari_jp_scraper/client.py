@@ -88,6 +88,7 @@ async def search_mercari_jp(
             "sort": sort,
             "order": order,
             "status": ["STATUS_ON_SALE"],
+            "excludeKeyword": "",
         },
         "withAuction": True,
         "defaultDatasets": ["DATASET_TYPE_MERCARI", "DATASET_TYPE_BEYOND"],
@@ -97,6 +98,9 @@ async def search_mercari_jp(
         payload["searchCondition"]["priceMin"] = price_min
     if price_max is not None:
         payload["searchCondition"]["priceMax"] = price_max
+
+    # convert booleans to strings like Mercari expects
+    payload = _convert_booleans(payload)
 
     all_items: list[dict] = []
     max_pages = 3
@@ -115,7 +119,7 @@ async def search_mercari_jp(
                 method="POST",
                 url=SEARCH_URL,
             )
-            headers["DPoP"] = dpop
+            headers["DPOP"] = dpop
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
             try:
@@ -124,6 +128,7 @@ async def search_mercari_jp(
                     content=body,
                     headers=headers,
                 )
+                logger.debug(f"Mercari API response status={resp.status_code} body={resp.text[:500]}")
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
@@ -132,11 +137,13 @@ async def search_mercari_jp(
 
             items = data.get("items", [])
             if not items:
+                logger.debug(f"Mercari response data: {json.dumps(data, ensure_ascii=False)[:300]}")
                 break
 
             for item in items:
                 all_items.append(_remap_item(item))
                 if len(all_items) >= limit:
+                    logger.info(f"Mercari JP API found {len(all_items)} items")
                     return all_items
 
             next_token = data.get("meta", {}).get("nextPageToken")
