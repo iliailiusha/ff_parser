@@ -87,9 +87,9 @@ def _translate_type(item_type: str, lang: str) -> str:
         return ""
     if lang == "ko":
         return CLOTHING_RU_TO_KO.get(item_type, item_type)
-    elif lang == "en":
+    if lang == "ja":
         return CLOTHING_EN.get(item_type, item_type)
-    return item_type
+    return CLOTHING_EN.get(item_type, item_type)
 
 
 def _deduplicate(items: list[GoofishItem]) -> list[GoofishItem]:

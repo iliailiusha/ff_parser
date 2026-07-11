@@ -119,7 +119,7 @@ async def search_mercari_jp(
                 method="POST",
                 url=SEARCH_URL,
             )
-            headers["DPOP"] = dpop
+            headers["DPoP"] = dpop
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
             try:
