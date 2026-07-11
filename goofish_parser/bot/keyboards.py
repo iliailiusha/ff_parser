@@ -11,6 +11,8 @@ BRANDS = [
 
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 from goofish_parser.storage.db import get_top_brands, get_top_types, get_saved_models
+import logging
+logger = logging.getLogger(__name__)
 
 
 def build_brand_keyboard(user_id: int = 0) -> InlineKeyboardMarkup:
@@ -25,7 +27,11 @@ def build_brand_keyboard(user_id: int = 0) -> InlineKeyboardMarkup:
         buttons.append(row)
 
     if user_id:
-        top = get_top_brands(user_id)
+        top = []
+        try:
+            top = get_top_brands(user_id)
+        except Exception as e:
+            logger.error(f"get_top_brands error: {e}")
         if top:
             freq_row = []
             for b in top:
@@ -53,7 +59,11 @@ def build_type_keyboard(user_id: int = 0) -> InlineKeyboardMarkup:
         buttons.append(row)
 
     if user_id:
-        top = get_top_types(user_id)
+        top = []
+        try:
+            top = get_top_types(user_id)
+        except Exception as e:
+            logger.error(f"get_top_types error: {e}")
         if top:
             freq_row = []
             for t in top:
@@ -103,7 +113,11 @@ def build_model_keyboard(
                 InlineKeyboardButton("✕", callback_data=f"model:hide_brand:{model}"),
             ])
 
-    saved = get_saved_models(user_id, brand, item_type)
+    saved = []
+    try:
+        saved = get_saved_models(user_id, brand, item_type)
+    except Exception as e:
+        logger.error(f"get_saved_models error: {e}")
     for m in saved:
         buttons.append([
             InlineKeyboardButton(f"📁 {m}", callback_data=f"model:select:{m}"),
