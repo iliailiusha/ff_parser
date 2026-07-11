@@ -85,11 +85,16 @@ CLOTHING_EN: dict[str, str] = {
 def _translate_type(item_type: str, lang: str) -> str:
     if not item_type:
         return ""
-    if lang == "ko":
-        return CLOTHING_RU_TO_KO.get(item_type, item_type)
-    if lang == "ja":
-        return CLOTHING_EN.get(item_type, item_type)
-    return CLOTHING_EN.get(item_type, item_type)
+    words = item_type.split()
+    translated = []
+    for w in words:
+        if lang == "ko":
+            translated.append(CLOTHING_RU_TO_KO.get(w, w))
+        elif lang == "ja":
+            translated.append(CLOTHING_EN.get(w, w))
+        else:
+            translated.append(CLOTHING_EN.get(w, w))
+    return " ".join(translated)
 
 
 def _deduplicate(items: list[GoofishItem]) -> list[GoofishItem]:

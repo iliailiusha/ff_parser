@@ -528,11 +528,11 @@ async def execute_search(
 
         platform_results = await search_all_platforms(
             brand=brand,
-            item_type_ru=type_ru,
+            item_type_ru=search_type,
             user_id=user_id,
             price_min=price_min,
             price_max=price_max,
-            limit_per_platform=50,
+            limit_per_platform=200,
         )
 
         if cancelled():
