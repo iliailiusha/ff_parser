@@ -181,29 +181,18 @@ async def search_items(criteria: SearchCriteria) -> SearchResult:
     if criteria.price_max_cny is not None:
         price_max = int(criteria.price_max_cny)
 
-    sort_orders = ["POPULAR", "NEW", "HIGH_VIEW"]
-    seen_ids: set[str] = set()
-    all_items: list[dict] = []
+    items = await search_products(
+        query=query,
+        sort="POPULAR",
+        limit=criteria.limit,
+        price_min=price_min,
+        price_max=price_max,
+    )
 
-    for sort in sort_orders:
-        items = await search_products(
-            query=query,
-            sort=sort,
-            limit=criteria.limit,
-            price_min=price_min,
-            price_max=price_max,
-        )
-        if items:
-            for item in items:
-                item_id = str(item.get("id", ""))
-                if item_id and item_id not in seen_ids:
-                    seen_ids.add(item_id)
-                    all_items.append(item)
-
-    if not all_items:
+    if not items:
         return SearchResult(empty=True)
 
-    parsed = [_ff_item_to_model(i) for i in all_items]
+    parsed = [_ff_item_to_model(i) for i in items]
     parsed = [i for i in parsed if i is not None]
     filtered = [i for i in parsed if i.price_cny > 0]
     return SearchResult(items=filtered, empty=len(filtered) == 0)
