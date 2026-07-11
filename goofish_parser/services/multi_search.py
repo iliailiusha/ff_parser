@@ -90,6 +90,26 @@ CLOTHING_EN: dict[str, str] = {
 }
 
 
+# Build EN→KO mapping from existing RU→KO and RU→EN dicts
+_EN_TO_KO: dict[str, str] = {}
+for _ru, _ko in CLOTHING_RU_TO_KO.items():
+    _en = CLOTHING_EN.get(_ru)
+    if _en:
+        _EN_TO_KO[_en] = _ko
+
+
+def translate_model(model: str) -> list[str]:
+    ml = model.lower().strip()
+    variants = {ml}
+    ko = _EN_TO_KO.get(ml)
+    if ko:
+        variants.add(ko)
+    ko = CLOTHING_RU_TO_KO.get(ml)
+    if ko:
+        variants.add(ko)
+    return list(variants)
+
+
 def _translate_type(item_type: str, lang: str) -> str:
     if not item_type:
         return ""

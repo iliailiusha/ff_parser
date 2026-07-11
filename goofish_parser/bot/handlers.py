@@ -545,9 +545,11 @@ async def execute_search(
         if model:
             model_lower = model.lower()
             before = len(all_items)
-            all_items = [i for i in all_items if model_lower in (i.title or "").lower()]
+            from goofish_parser.services.multi_search import translate_model
+            variants = translate_model(model)
+            all_items = [i for i in all_items if any(v in (i.title or "").lower() for v in variants)]
             kept = len(all_items)
-            logger.info(f"Model filter [{model}]: {kept}/{before} kept")
+            logger.info(f"Model filter [{model}] variants={variants}: {kept}/{before} kept")
             if kept == 0:
                 text = f"😕 Нет объяв с моделью *{model}* по запросу *{label}*."
                 try:
