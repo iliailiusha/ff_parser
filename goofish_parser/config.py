@@ -18,7 +18,10 @@ USD_TO_RUB = float(os.getenv("USD_TO_RUB", "85"))
 
 API_BASE_URL = os.getenv("API_BASE_URL", "")
 
-DB_PATH = DATA_DIR / "storage.db"
+_is_hf = bool(os.getenv("SPACE_ID"))
+_storage_dir = os.getenv("STORAGE_DIR", "/data" if _is_hf else str(DATA_DIR))
+DB_PATH = Path(_storage_dir) / "storage.db"
+os.makedirs(str(DB_PATH.parent), exist_ok=True)
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
