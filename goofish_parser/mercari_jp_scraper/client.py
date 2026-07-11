@@ -162,12 +162,14 @@ def _remap_item(item: dict) -> dict:
     else:
         item_url = f"https://jp.mercari.com/shop/product/{item_id}"
     logger.debug(f"Remapped Mercari item: id={item_id} url={item_url}")
-    brand_raw = item.get("brand", None)
+    brand_raw = item.get("itemBrand") or item.get("brand")
     brand_name = ""
     if isinstance(brand_raw, dict):
         brand_name = brand_raw.get("name", "")
     elif isinstance(brand_raw, str):
         brand_name = brand_raw
+    elif brand_raw is None:
+        brand_name = ""
     return {
         "id": item_id,
         "name": item.get("name", ""),
