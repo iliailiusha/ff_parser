@@ -137,6 +137,8 @@ async def search_mercari_jp(
                 logger.debug(f"Mercari response data: {json.dumps(data, ensure_ascii=False)[:300]}")
                 break
 
+            logger.debug(f"Mercari first item sample: id={items[0].get('id')} name={items[0].get('name')}")
+
             for item in items:
                 all_items.append(_remap_item(item))
                 if len(all_items) >= limit:
@@ -153,13 +155,16 @@ async def search_mercari_jp(
 
 
 def _remap_item(item: dict) -> dict:
+    item_id = item.get("id", "")
+    item_url = f"https://jp.mercari.com/item/{item_id}"
+    logger.debug(f"Remapped Mercari item: id={item_id} url={item_url}")
     return {
-        "id": item.get("id", ""),
+        "id": item_id,
         "name": item.get("name", ""),
         "price": item.get("price", 0),
         "photos": item.get("thumbnails", []),
         "status": item.get("status", ""),
         "created": item.get("created", 0),
         "updated": item.get("updated", 0),
-        "item_url": f"https://jp.mercari.com/item/{item.get('id', '')}",
+        "item_url": item_url,
     }
