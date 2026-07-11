@@ -20,7 +20,7 @@ def _bunjang_item_to_model(raw: dict) -> Optional[GoofishItem]:
         title = str(raw.get("name") or "")
         price = _parse_price_krw(raw.get("price", 0))
         brand_name = str(raw.get("brand", "") or raw.get("brand_name", "") or raw.get("brand_nm", "") or raw.get("maker", "") or raw.get("maker_name", "") or raw.get("company", "") or "")
-        location = str(raw.get("region", "") or "")
+        location = str(raw.get("location", "") or "")
         if brand_name:
             location = brand_name
         status = str(raw.get("status", "") or "")
