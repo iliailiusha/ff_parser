@@ -526,12 +526,14 @@ async def execute_search(
 
         await msg.edit_text("🔍 Поиск по всем площадкам...")
 
+        price_currency = context.user_data.get("price_currency", "KRW")
         platform_results = await search_all_platforms(
             brand=brand,
             item_type_ru=type_ru,
             user_id=user_id,
             price_min=price_min,
             price_max=price_max,
+            price_currency=price_currency,
             limit_per_platform=50,
         )
 

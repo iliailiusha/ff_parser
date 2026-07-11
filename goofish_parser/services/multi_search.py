@@ -4,6 +4,7 @@ from typing import Optional
 
 from goofish_parser.scraper.models import GoofishItem, PLATFORM_INFO, ALL_PLATFORMS, COUNTRY_PLATFORMS
 from goofish_parser.storage.db import get_enabled_platforms
+from goofish_parser.services.exchange_rate import get_krw_to_rub, get_jpy_to_rub, get_sgd_to_rub
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,13 @@ PLATFORM_LANG: dict[str, str] = {
     "bunjang": "ko",
     "carousell": "en",
     "mercari_jp": "ja",
+}
+
+PLATFORM_CURRENCY: dict[str, str] = {
+    "fruitsfamily": "KRW",
+    "bunjang": "KRW",
+    "carousell": "SGD",
+    "mercari_jp": "JPY",
 }
 
 PLATFORM_SEARCHERS: dict[str, str] = {
@@ -103,12 +111,40 @@ def _deduplicate(items: list[GoofishItem]) -> list[GoofishItem]:
     return result
 
 
+def _convert_price(price: Optional[float], from_currency: str, to_currency: str) -> Optional[float]:
+    if price is None or from_currency == to_currency:
+        return price
+    if from_currency == "RUB" and to_currency == "KRW":
+        rate = get_krw_to_rub()
+        return round(price / rate) if rate else price
+    if from_currency == "RUB" and to_currency == "JPY":
+        rate = get_jpy_to_rub()
+        return round(price / rate) if rate else price
+    if from_currency == "RUB" and to_currency == "SGD":
+        rate = get_sgd_to_rub()
+        return round(price / rate) if rate else price
+    if from_currency == "KRW" and to_currency == "JPY":
+        krw_rate = get_krw_to_rub()
+        jpy_rate = get_jpy_to_rub()
+        if krw_rate and jpy_rate:
+            return round(price * krw_rate / jpy_rate)
+        return price
+    if from_currency == "KRW" and to_currency == "SGD":
+        krw_rate = get_krw_to_rub()
+        sgd_rate = get_sgd_to_rub()
+        if krw_rate and sgd_rate:
+            return round(price * krw_rate / sgd_rate)
+        return price
+    return price
+
+
 async def search_all_platforms(
     brand: str,
     item_type_ru: str,
     user_id: int,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
+    price_currency: str = "KRW",
     limit_per_platform: int = 50,
 ) -> dict[str, list[GoofishItem]]:
     enabled = get_enabled_platforms(user_id)
@@ -121,11 +157,14 @@ async def search_all_platforms(
             lang = PLATFORM_LANG.get(platform, "en")
             translated_type = _translate_type(item_type_ru, lang)
             mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
+            plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
+            plat_price_min = _convert_price(price_min, price_currency, plat_currency)
+            plat_price_max = _convert_price(price_max, price_currency, plat_currency)
             result = await mod.search_by_brand_type(
                 brand=brand,
                 item_type=translated_type,
-                price_min=price_min,
-                price_max=price_max,
+                price_min=plat_price_min,
+                price_max=plat_price_max,
                 limit=limit_per_platform,
             )
             if result and result.items:
@@ -159,6 +198,9 @@ async def search_all_platforms_free_text(
     query: str,
     user_id: int,
     limit_per_platform: int = 100,
+    price_min: Optional[float] = None,
+    price_max: Optional[float] = None,
+    price_currency: str = "KRW",
 ) -> dict[str, list[GoofishItem]]:
     enabled = get_enabled_platforms(user_id)
 
@@ -168,11 +210,14 @@ async def search_all_platforms_free_text(
             if not searcher_mod:
                 return []
             mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
+            plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
+            plat_price_min = _convert_price(price_min, price_currency, plat_currency)
+            plat_price_max = _convert_price(price_max, price_currency, plat_currency)
             result = await mod.search_by_brand_type(
                 brand=query,
                 item_type="",
-                price_min=None,
-                price_max=None,
+                price_min=plat_price_min,
+                price_max=plat_price_max,
                 limit=limit_per_platform,
             )
             if result and result.items:
