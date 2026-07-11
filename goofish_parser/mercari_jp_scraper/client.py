@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from typing import Any, Optional
 
@@ -7,7 +8,6 @@ from curl_cffi.requests import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-SEARCH_API = "https://api.mercari.jp/v2/entities:search"
 SEARCH_PAGE = "https://jp.mercari.com/search"
 
 
@@ -19,147 +19,174 @@ async def search_mercari_jp(
     sort: str = "created_time",
     order: str = "desc",
 ) -> list[dict]:
-    all_items: list[dict] = []
-
-    payload = {
-        "pageSize": min(limit, 120),
-        "searchCondition": {
-            "keyword": query,
-            "sort": sort,
-            "order": order,
-            "status": ["on_sale"],
-        },
-        "defaultSearchConditions": {
-            "excludeKeyword": "",
-        },
-    }
-    if price_min is not None:
-        payload["searchCondition"]["priceMin"] = price_min
-    if price_max is not None:
-        payload["searchCondition"]["priceMax"] = price_max
-
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Origin": "https://jp.mercari.com",
-        "Referer": "https://jp.mercari.com/",
-        "X-Platform": "web",
-    }
-
     async with AsyncSession() as session:
-        page_token = None
-        fetched = 0
-        max_pages = 3
+        try:
+            await session.get(
+                "https://jp.mercari.com/",
+                headers={
+                    "Accept": "text/html",
+                    "Accept-Language": "ja,en;q=0.9",
+                },
+                impersonate="chrome124",
+                timeout=30,
+            )
+        except Exception:
+            pass
 
-        for page in range(max_pages):
-            if page_token:
-                payload["pageToken"] = page_token
-            else:
-                payload.pop("pageToken", None)
+        try:
+            params = {"keyword": query}
+            if price_min is not None:
+                params["price_min"] = price_min
+            if price_max is not None:
+                params["price_max"] = price_max
 
-            try:
-                resp = await session.post(
-                    SEARCH_API,
-                    json=payload,
-                    headers=headers,
-                    impersonate="chrome124",
-                    timeout=30,
-                )
-                if resp.status_code == 404:
-                    logger.warning("Mercari JP API returned 404, falling back to HTML scrape")
-                    return await _scrape_search_page(query, limit, session)
+            resp = await session.get(
+                SEARCH_PAGE,
+                params=params,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "ja,en;q=0.9",
+                    "Referer": "https://jp.mercari.com/",
+                },
+                impersonate="chrome124",
+                timeout=30,
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception as e:
+            logger.error(f"Mercari JP search page error: {e}")
+            return []
 
-                resp.raise_for_status()
-                data = resp.json()
-            except Exception as e:
-                logger.error(f"Mercari JP API search error: {e}, falling back to HTML scrape")
-                return await _scrape_search_page(query, limit, session)
-
-            items = data.get("items", [])
-            if not items:
-                break
-
-            for item in items:
-                all_items.append(item)
-                fetched += 1
-
-            page_token = data.get("meta", {}).get("nextPageToken")
-            if not page_token or fetched >= limit:
-                break
-
-            time.sleep(0.5)
-
-    if not all_items:
-        async with AsyncSession() as session:
-            return await _scrape_search_page(query, limit, session)
-
-    return all_items
+        items = _extract_from_html(html)
+        logger.info(f"Mercari JP found {len(items)} items")
+        return items
 
 
-async def _scrape_search_page(query: str, limit: int, session: AsyncSession) -> list[dict]:
-    try:
-        params = {"keyword": query, "limit": min(limit, 120)}
-        resp = await session.get(
-            SEARCH_PAGE,
-            params=params,
-            headers={
-                "Accept": "text/html",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            },
-            impersonate="chrome124",
-            timeout=30,
-        )
-        resp.raise_for_status()
-        html = resp.text
-    except Exception as e:
-        logger.error(f"Mercari JP HTML scrape error: {e}")
-        return []
+def _extract_from_html(html: str) -> list[dict]:
+    items = []
 
-    items = _extract_items_from_html(html)
-    logger.info(f"Mercari JP HTML scrape found {len(items)} items")
+    next_data = _extract_next_data(html)
+    if next_data:
+        items = _parse_next_data_items(next_data)
+        if items:
+            logger.info("Mercari JP: extracted items from __NEXT_DATA__")
+            return items
+
+    items = _extract_from_jsonld(html)
+    if items:
+        logger.info(f"Mercari JP: extracted {len(items)} items from JSON-LD")
+        return items
+
+    items = _extract_regex_fallback(html)
     return items
 
 
-def _extract_items_from_html(html: str) -> list[dict]:
-    items = []
-
-    import re
-
+def _extract_next_data(html: str) -> Optional[dict]:
     patterns = [
-        r'__NEXT_DATA__[^>]*type="application/json"[^>]*>(.*?)</script>',
-        r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+        r'<script[^>]*id="__NEXT_DATA__"[^>]*type="application/json"[^>]*>(.*?)</script>',
+        r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
     ]
-
     for pattern in patterns:
         match = re.search(pattern, html, re.DOTALL)
         if match:
             try:
-                data = json.loads(match.group(1))
-                props = data.get("props", {}).get("pageProps", {})
-                items_data = props.get("items", []) or props.get("searchResult", {}).get("items", [])
-                if items_data:
-                    return items_data
-            except (json.JSONDecodeError, KeyError, TypeError):
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
                 continue
+    return None
 
-    import re
 
-    item_blocks = re.findall(
-        r'class="[^"]*item[^"]*"[^>]*>.*?data-testid="item-cell".*?<a[^>]*href="(/item/[^"]+)"[^>]*>.*?<img[^>]*src="([^"]+)".*?class="[^"]*name[^"]*"[^>]*>(.*?)</div>.*?class="[^"]*price[^"]*"[^>]*>.*?¥?([0-9,]+)',
-        html, re.DOTALL
+def _parse_next_data_items(data: dict) -> list[dict]:
+    try:
+        props = data.get("props", {}) or {}
+        page_props = props.get("pageProps", {}) or {}
+    except AttributeError:
+        return []
+
+    candidates = []
+    for key in ["items", "searchResult", "products", "initialState", "item"]:
+        val = page_props.get(key)
+        if val is not None:
+            candidates.append(val)
+
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            for sub_key in ["items", "products", "result"]:
+                sub_val = candidate.get(sub_key)
+                if isinstance(sub_val, list) and sub_val:
+                    return sub_val
+        elif isinstance(candidate, list):
+            return candidate
+
+    try:
+        state = page_props.get("initialState", {})
+        if isinstance(state, dict):
+            items = state.get("items", []) or state.get("products", [])
+            if items:
+                return items
+            for maybe_list in state.values():
+                if isinstance(maybe_list, list) and len(maybe_list) > 0 and isinstance(maybe_list[0], dict) and "id" in maybe_list[0]:
+                    return maybe_list
+    except Exception:
+        pass
+
+    return []
+
+
+def _extract_from_jsonld(html: str) -> list[dict]:
+    pattern = r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
+    items = []
+    for match in re.finditer(pattern, html, re.DOTALL):
+        try:
+            data = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            data = [data]
+        for entry in data:
+            if isinstance(entry, dict) and entry.get("name") and entry.get("offers"):
+                try:
+                    price = float(entry["offers"].get("price", 0))
+                except (ValueError, TypeError):
+                    price = 0
+                if price > 0:
+                    img = ""
+                    if entry.get("image"):
+                        img = entry["image"][0] if isinstance(entry["image"], list) else entry["image"]
+                    items.append({
+                        "id": entry.get("sku", "") or str(hash(entry.get("name", ""))),
+                        "name": entry.get("name", ""),
+                        "price": int(price),
+                        "photos": [{"url": img}] if img else [],
+                        "url": entry.get("url", ""),
+                        "item_url": entry.get("url", ""),
+                        "status": "on_sale",
+                    })
+    return items
+
+
+def _extract_regex_fallback(html: str) -> list[dict]:
+    items = []
+    seen_ids = set()
+
+    item_card_pattern = re.compile(
+        r'<a[^>]*href=["\'](/item/([^"\']+))["\'][^>]*>.*?'
+        r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>.*?'
+        r'(?:alt|title)=["\']([^"\']*)["\'].*?'
+        r'¥\s*([0-9,]+)',
+        re.DOTALL,
     )
 
-    seen_ids = set()
-    for match in item_blocks:
-        item_url = match[0]
-        item_id = item_url.split("/")[-1] if "/" in item_url else item_url
+    for match in item_card_pattern.finditer(html):
+        item_url = match.group(1)
+        item_id = match.group(2)
+        img_url = match.group(3)
+        name = match.group(4).strip()
+        price_str = match.group(5).replace(",", "")
+
         if item_id in seen_ids:
             continue
         seen_ids.add(item_id)
-
-        img_url = match[1]
-        name = re.sub(r'<[^>]+>', '', match[2]).strip()
-        price_str = match[3].replace(",", "")
 
         try:
             price = int(price_str)
@@ -172,6 +199,7 @@ def _extract_items_from_html(html: str) -> list[dict]:
             "price": price,
             "photos": [{"url": img_url}] if img_url else [],
             "item_url": f"https://jp.mercari.com{item_url}",
+            "url": f"https://jp.mercari.com{item_url}",
             "status": "on_sale",
         })
 
