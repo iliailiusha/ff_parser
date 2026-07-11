@@ -19,7 +19,10 @@ def _bunjang_item_to_model(raw: dict) -> Optional[GoofishItem]:
         item_id = str(raw.get("pid", ""))
         title = str(raw.get("name") or "")
         price = _parse_price_krw(raw.get("price", 0))
+        brand_name = str(raw.get("brand", "") or raw.get("brand_name", "") or "")
         location = str(raw.get("region", "") or "")
+        if brand_name:
+            location = brand_name
         status = str(raw.get("status", "") or "")
         condition_map = {"0": "중고", "1": "새제품", "2": "리퍼"}
         condition = condition_map.get(str(raw.get("condition", "")), "")

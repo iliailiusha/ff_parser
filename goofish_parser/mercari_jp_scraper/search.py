@@ -43,6 +43,7 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
             "5": "傷や汚れあり",
             "6": "全体的に状態が悪い",
         }
+        brand_name = str(raw.get("brand", "") or "")
         condition_id = str(raw.get("item_condition_id", "") or raw.get("conditionId", "") or raw.get("condition", ""))
         condition = condition_map.get(condition_id, "")
 
@@ -62,7 +63,7 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
             price_cny=price,
             url=item_url,
             condition=condition,
-            location="",
+            location=brand_name,
             badge="",
             images=images,
             seller_id=seller_id,

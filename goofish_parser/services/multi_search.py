@@ -171,10 +171,7 @@ async def search_all_platforms(
                 items = result.items
                 if brand:
                     brand_lower = brand.lower()
-                    items = [i for i in items if (
-                        brand_lower in i.location.lower() or
-                        brand_lower in i.title.lower()
-                    )]
+                    items = [i for i in items if brand_lower in i.location.lower()]
                 return items
             return []
         except Exception as e:
