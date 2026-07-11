@@ -1,7 +1,8 @@
+import json
 import logging
 from typing import Any, Optional
 
-import httpx
+from curl_cffi.requests import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,6 @@ async def search_carousell(
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,
 ) -> list[dict]:
-    all_items: list[dict] = []
-
     params: dict[str, Any] = {
         "query": query,
         "count": count,
@@ -42,15 +41,20 @@ async def search_carousell(
         params["price_max"] = price_max
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json",
         "x-requested-with": "XMLHttpRequest",
         "Referer": "https://www.carousell.sg/",
     }
 
-    async with httpx.AsyncClient(headers=headers, timeout=15) as client:
+    async with AsyncSession() as session:
         try:
-            resp = await client.get(SEARCH_URL, params=params)
+            resp = await session.get(
+                SEARCH_URL,
+                params=params,
+                headers=headers,
+                impersonate="chrome124",
+                timeout=30,
+            )
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -61,8 +65,9 @@ async def search_carousell(
         if not products:
             products = data.get("products", [])
 
+        all_items = []
         for p in products:
             listing = p.get("listing", p)
             all_items.append(listing)
 
-    return all_items
+        return all_items

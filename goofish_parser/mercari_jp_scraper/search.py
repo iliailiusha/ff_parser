@@ -20,17 +20,17 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
         title = str(raw.get("name", "") or raw.get("title", ""))
         price = _parse_price_jpy(raw.get("price", 0))
 
-        photos = raw.get("photos", []) or raw.get("images", [])
+        photos = raw.get("photos", []) or raw.get("images", []) or raw.get("thumbnailUrls", [])
         images = []
         if photos:
             for p in photos[:5]:
                 if isinstance(p, dict):
-                    images.append(p.get("url", ""))
+                    images.append(p.get("url", "") or p.get("thumbnailUrl", ""))
                 elif isinstance(p, str):
                     images.append(p)
 
         status = str(raw.get("status", "") or "")
-        created_at_str = str(raw.get("created_at", "") or raw.get("listing_time", ""))
+        created_at_str = str(raw.get("created_at", "") or raw.get("listingTime", "") or raw.get("listing_time", ""))
         if created_at_str and created_at_str.isdigit():
             from datetime import datetime
             created_at_str = datetime.fromtimestamp(int(created_at_str)).isoformat()
@@ -43,19 +43,21 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
             "5": "傷や汚れあり",
             "6": "全体的に状態が悪い",
         }
-        condition_id = str(raw.get("item_condition_id", "") or raw.get("condition", ""))
+        condition_id = str(raw.get("item_condition_id", "") or raw.get("conditionId", "") or raw.get("condition", ""))
         condition = condition_map.get(condition_id, "")
 
         seller_raw = raw.get("seller", {})
         seller_id = str(seller_raw.get("id", "")) if isinstance(seller_raw, dict) else ""
 
-        url = f"https://jp.mercari.com/item/{item_id}"
+        item_url = raw.get("item_url", "") or raw.get("url", "")
+        if not item_url and item_id:
+            item_url = f"https://jp.mercari.com/item/{item_id}"
 
         return GoofishItem(
             item_id=item_id,
             title=title,
             price_cny=price,
-            url=url,
+            url=item_url,
             condition=condition,
             location="",
             badge="",

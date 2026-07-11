@@ -348,7 +348,10 @@ async def execute_search(
 
         if not all_items:
             text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры или проверьте /settings."
-            await msg.edit_message_text(text, parse_mode="Markdown")
+            try:
+                await msg.edit_text(text, parse_mode="Markdown")
+            except AttributeError:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
             return ConversationHandler.END
 
         platform_summary = " | ".join(
