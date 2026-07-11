@@ -174,14 +174,10 @@ async def search_all_platforms(
                     before = len(items)
                     filtered = []
                     for i in items:
-                        if i.location and brand_lower in i.location.lower():
+                        if not i.location:
                             filtered.append(i)
-                        elif not i.location:
-                            title_lower = (i.title or "").lower()
-                            if brand_lower in title_lower:
-                                filtered.append(i)
-                            else:
-                                logger.debug(f"Brand+TITLE removed [{platform}] {i.title} (loc empty)")
+                        elif brand_lower in i.location.lower():
+                            filtered.append(i)
                         else:
                             logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
                     items = filtered
