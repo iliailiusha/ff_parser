@@ -174,14 +174,18 @@ async def search_all_platforms(
                     before = len(items)
                     filtered = []
                     for i in items:
-                        if not i.location:
+                        if i.location and brand_lower in i.location.lower():
                             filtered.append(i)
-                        elif brand_lower in i.location.lower():
-                            filtered.append(i)
+                        elif not i.location:
+                            title_lower = (i.title or "").lower()
+                            if brand_lower in title_lower:
+                                filtered.append(i)
+                            else:
+                                logger.debug(f"Brand+TITLE removed [{platform}] {i.title} (loc empty)")
                         else:
                             logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
                     items = filtered
-                    logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept (brand={brand!r})")
+                    logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept")
                 return items
             return []
         except Exception as e:

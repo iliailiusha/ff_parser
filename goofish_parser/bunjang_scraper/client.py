@@ -50,6 +50,10 @@ async def search_bunjang(
             if not items:
                 break
 
+            if page == 1 and items:
+                logger.debug(f"Bunjang first item keys: {list(items[0].keys())}")
+                logger.debug(f"Bunjang first item first 500: {str(items[0])[:500]}")
+
             all_items.extend(items)
             time.sleep(0.5)
 
