@@ -51,7 +51,10 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
 
         item_url = raw.get("item_url", "") or raw.get("url", "")
         if not item_url and item_id:
-            item_url = f"https://jp.mercari.com/item/{item_id}"
+            if item_id.startswith("m"):
+                item_url = f"https://jp.mercari.com/item/{item_id}"
+            else:
+                item_url = f"https://jp.mercari.com/shop/product/{item_id}"
 
         return GoofishItem(
             item_id=item_id,

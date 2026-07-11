@@ -122,7 +122,7 @@ async def search_products(
     if not query_str:
         return []
 
-    safe_limit = min(limit, 100)
+    safe_limit = min(limit, 200)
     variables = {
         "filter": {"query": query_str, "show_only": show_only},
         "sort": sort,

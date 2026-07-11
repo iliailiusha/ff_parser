@@ -100,7 +100,7 @@ async def search_mercari_jp(
         payload["searchCondition"]["priceMax"] = price_max
 
     all_items: list[dict] = []
-    max_pages = 3
+    max_pages = 5
 
     headers = {
         "X-Platform": "web",
@@ -141,9 +141,6 @@ async def search_mercari_jp(
             logger.debug(f"Mercari first item full: {json.dumps(items[0], ensure_ascii=False)[:500]}")
 
             for item in items:
-                item_id = item.get("id", "")
-                if not item_id.startswith("m"):
-                    continue
                 all_items.append(_remap_item(item))
                 if len(all_items) >= limit:
                     logger.info(f"Mercari JP API found {len(all_items)} items")
@@ -160,7 +157,10 @@ async def search_mercari_jp(
 
 def _remap_item(item: dict) -> dict:
     item_id = item.get("id", "")
-    item_url = f"https://jp.mercari.com/item/{item_id}"
+    if item_id.startswith("m"):
+        item_url = f"https://jp.mercari.com/item/{item_id}"
+    else:
+        item_url = f"https://jp.mercari.com/shop/product/{item_id}"
     logger.debug(f"Remapped Mercari item: id={item_id} url={item_url}")
     return {
         "id": item_id,
