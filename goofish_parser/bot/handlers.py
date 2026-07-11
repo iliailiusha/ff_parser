@@ -12,12 +12,12 @@ from telegram.ext import (
 from goofish_parser.analyzer.market import calculate_market_price
 from goofish_parser.analyzer.scoring import score_items
 from goofish_parser.bot.messages import format_search_result, HELP_TEXT
-from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboard, build_price_keyboard
+from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboard, build_price_keyboard, build_model_keyboard
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 from goofish_parser.ff_scraper.search import search_products_free_text
 from goofish_parser.services.multi_search import search_all_platforms, search_all_platforms_free_text, merge_platform_results
 from goofish_parser.services.exchange_rate import get_krw_to_rub, get_rate_to_rub
-from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals
+from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals, increment_brand_freq, increment_type_freq, save_model, delete_model, get_disabled_brand_recs
 from goofish_parser.scraper.models import PLATFORM_INFO
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _is_stale(context: ContextTypes.DEFAULT_TYPE, user_id: int, gen: int | None)
     bd = context.application.bot_data
     return bd.get(_GEN_KEY, {}).get(user_id, 0) != gen
 
-BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX, BRAND_INPUT = range(6)
+BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX, BRAND_INPUT, MODEL_SELECT = range(7)
 FIND_ITEMS_PER_PAGE = 5
 
 
@@ -60,7 +60,7 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     )
     await update.message.reply_text(
         welcome,
-        reply_markup=build_brand_keyboard(),
+        reply_markup=build_brand_keyboard(user_id=update.effective_user.id),
     )
     return BRAND_SELECT
 
@@ -100,7 +100,7 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["find_mode"] = True
     await update.message.reply_text(
         "👋 Поиск по FruitsFamily + Bunjang + Carousell + Mercari JP. /settings чтобы настроить.",
-        reply_markup=build_brand_keyboard(),
+        reply_markup=build_brand_keyboard(user_id=update.effective_user.id),
     )
     return BRAND_SELECT
 
@@ -117,7 +117,7 @@ async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.edit_message_text(
         f"Бренд: *{brand}*\n\nТеперь выбери тип одежды:",
         parse_mode="Markdown",
-        reply_markup=build_type_keyboard(),
+        reply_markup=build_type_keyboard(user_id=user_id),
     )
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
@@ -134,7 +134,7 @@ async def on_brand_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text(
         "✏️ Напиши название своего бренда:\n\n"
         "Например: `Marni`, `Margiela`, `Raf Simons`\n\n"
-        "Или отправь /cancel чтобы отменить.",
+        "Или /back чтобы вернуться к выбору, /cancel чтобы отменить.",
         parse_mode="Markdown",
     )
     if _is_stale(context, user_id, gen):
@@ -147,12 +147,19 @@ async def on_brand_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     user_id = update.effective_user.id
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
-    brand = update.message.text.strip()
+    text = update.message.text.strip()
+    if text.lower() in ("/back", "/b"):
+        await update.message.reply_text(
+            "👋 Выбери бренд:",
+            reply_markup=build_brand_keyboard(user_id=user_id),
+        )
+        return BRAND_SELECT
+    brand = text
     context.user_data["brand"] = brand
     await update.message.reply_text(
         f"Бренд: *{brand}*\n\nТеперь выбери тип одежды:",
         parse_mode="Markdown",
-        reply_markup=build_type_keyboard(),
+        reply_markup=build_type_keyboard(user_id=user_id),
     )
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
@@ -166,7 +173,16 @@ async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
-    type_ru = query.data.split(":", 1)[1]
+    action = query.data.split(":", 1)[1]
+    if action == "back":
+        brand = context.user_data.get("brand", "?")
+        await query.edit_message_text(
+            f"👋 Выбери бренд:\n\nТекущий: *{brand}*",
+            parse_mode="Markdown",
+            reply_markup=build_brand_keyboard(user_id=user_id),
+        )
+        return BRAND_SELECT
+    type_ru = action
     type_ko = CLOTHING_RU_TO_KO.get(type_ru, type_ru)
     context.user_data["type_ru"] = type_ru
     context.user_data["type_ko"] = type_ko
@@ -191,7 +207,16 @@ async def on_type_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     user_id = update.effective_user.id
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
-    type_ru = update.message.text.strip()
+    text = update.message.text.strip()
+    if text.lower() in ("/back", "/b"):
+        brand = context.user_data.get("brand", "?")
+        await update.message.reply_text(
+            f"👋 Выбери бренд:\n\nТекущий: *{brand}*",
+            parse_mode="Markdown",
+            reply_markup=build_brand_keyboard(user_id=user_id),
+        )
+        return BRAND_SELECT
+    type_ru = text
     type_ko = CLOTHING_RU_TO_KO.get(type_ru, type_ru)
     context.user_data["type_ru"] = type_ru
     context.user_data["type_ko"] = type_ko
@@ -219,33 +244,48 @@ async def on_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
     action = query.data.split(":", 1)[1]
+    if action == "back":
+        type_ru = context.user_data.get("type_ru", "")
+        type_ko = context.user_data.get("type_ko", "")
+        brand = context.user_data.get("brand", "?")
+        if type_ru:
+            await query.edit_message_text(
+                f"Бренд: *{brand}*\nТекущий тип: *{type_ru}* → *{type_ko}*\n\nВыбери тип одежды:",
+                parse_mode="Markdown",
+                reply_markup=build_type_keyboard(user_id=user_id),
+            )
+            return TYPE_SELECT
+        await query.edit_message_text(
+            f"👋 Выбери бренд:\n\nТекущий: *{brand}*",
+            parse_mode="Markdown",
+            reply_markup=build_brand_keyboard(user_id=user_id),
+        )
+        return BRAND_SELECT
+
     if action == "skip":
         context.user_data["price_min"] = None
         context.user_data["price_max"] = None
-        sent = await query.edit_message_text("🔍 Ищу...")
-        if _is_stale(context, user_id, gen):
-            return ConversationHandler.END
-        return await execute_search(update, context, query.message, gen=gen)
+        return await _show_model_menu(update, context, query.message)
 
     if action == "rub":
         context.user_data["price_currency"] = "RUB"
         prompt = (
             "Введи минимальную цену в рублях (₽):\n"
             "Например: `1000`\n\n"
-            "Или отправь /cancel чтобы отменить."
+            "Или /back чтобы вернуться, /cancel чтобы отменить."
         )
     elif action == "krw":
         context.user_data["price_currency"] = "KRW"
         prompt = (
             "Введи минимальную цену в вонах (₩):\n"
             "Например: `50000`\n\n"
-            "Или отправь /cancel чтобы отменить."
+            "Или /back чтобы вернуться, /cancel чтобы отменить."
         )
     else:
         prompt = (
             "Введи минимальную цену в вонах (₩):\n"
             "Например: `50000`\n\n"
-            "Или отправь /cancel чтобы отменить."
+            "Или /back чтобы вернуться, /cancel чтобы отменить."
         )
     await query.edit_message_text(prompt, parse_mode="Markdown")
     if _is_stale(context, user_id, gen):
@@ -257,6 +297,24 @@ async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     gen = context.user_data.get("_entry_gen")
     user_id = update.effective_user.id
     text = update.message.text.strip()
+    if text.lower() in ("/back", "/b"):
+        brand = context.user_data.get("brand", "?")
+        type_ru = context.user_data.get("type_ru", "")
+        is_find = context.user_data.get("find_mode")
+        price_prompt = (
+            "Укажи цену в рублях (₽) или пропусти:" if is_find
+            else "Укажи цену в корейских вонах (₩) или пропусти:"
+        )
+        summary = f"Бренд: *{brand}*"
+        if type_ru:
+            type_ko = context.user_data.get("type_ko", type_ru)
+            summary += f"\nТип: *{type_ru}* → *{type_ko}*"
+        await update.message.reply_text(
+            f"{summary}\n\n{price_prompt}",
+            parse_mode="Markdown",
+            reply_markup=build_price_keyboard(find_mode=is_find),
+        )
+        return PRICE_SELECT
     try:
         context.user_data["price_min"] = float(text)
     except ValueError:
@@ -277,17 +335,148 @@ async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def on_price_max(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
     text = update.message.text.strip()
     if text.lower() in ("/skip", "/s"):
         context.user_data["price_max"] = None
+    elif text.lower() in ("/back", "/b"):
+        cur = context.user_data.get("price_currency", "KRW")
+        currency = "рублях (₽)" if cur == "RUB" else "вонах (₩)"
+        example = "`3000`" if cur == "RUB" else "`300000`"
+        await update.message.reply_text(
+            f"Введи минимальную цену в {currency}:\n"
+            f"Например: {example}\n"
+            "Или /back чтобы вернуться к цене.",
+            parse_mode="Markdown",
+        )
+        return PRICE_INPUT_MIN
     else:
         try:
             context.user_data["price_max"] = float(text)
         except ValueError:
             await update.message.reply_text("❌ Введи число или /skip:")
             return PRICE_INPUT_MAX
-    msg = await update.message.reply_text("🔍 Ищу...")
+    return await _show_model_menu(update, context, None, is_message=True)
+
+
+async def _show_model_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, msg, is_message: bool = False) -> int:
+    user_id = update.effective_user.id
     gen = context.user_data.get("_entry_gen")
+    brand = context.user_data.get("brand", "")
+    type_ru = context.user_data.get("type_ru", "")
+    text = f"Бренд: *{brand}*"
+    if type_ru:
+        text += f"\nТип: *{type_ru}*"
+    text += "\n\nТеперь укажи модель или пропусти:"
+
+    popular = []
+    try:
+        disabled = get_disabled_brand_recs(user_id)
+    except Exception:
+        disabled = set()
+    popular = [(m, "auto") for m in [brand] if brand and brand not in disabled]
+
+    keyboard = build_model_keyboard(user_id, brand, type_ru, popular_models=popular)
+    if is_message:
+        sent = await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await msg.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    return MODEL_SELECT
+
+
+async def on_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
+    query = update.callback_query
+    await query.answer()
+    if _is_stale(context, user_id, gen):
+        return ConversationHandler.END
+    action = query.data.split(":", 1)[1]
+    if action == "skip":
+        context.user_data["model"] = ""
+        await query.edit_message_text("🔍 Ищу...")
+        return await execute_search(update, context, query.message, gen=gen)
+    if action == "back":
+        brand = context.user_data.get("brand", "?")
+        type_ru = context.user_data.get("type_ru", "")
+        is_find = context.user_data.get("find_mode")
+        price_prompt = (
+            "Укажи цену в рублях (₽) или пропусти:" if is_find
+            else "Укажи цену в корейских вонах (₩) или пропусти:"
+        )
+        summary = f"Бренд: *{brand}*"
+        if type_ru:
+            type_ko = context.user_data.get("type_ko", type_ru)
+            summary += f"\nТип: *{type_ru}* → *{type_ko}*"
+        await query.edit_message_text(
+            f"{summary}\n\n{price_prompt}",
+            parse_mode="Markdown",
+            reply_markup=build_price_keyboard(find_mode=is_find),
+        )
+        return PRICE_SELECT
+    if action == "custom":
+        await query.edit_message_text(
+            "✏️ Напиши название модели:\n\n"
+            "Например: `Air Force 1`, `990v5`, `Speed Trainer`\n\n"
+            "Или /back чтобы вернуться, /cancel чтобы отменить.",
+            parse_mode="Markdown",
+        )
+        return MODEL_SELECT
+    if action.startswith("select:"):
+        model = action.split(":", 1)[1]
+        context.user_data["model"] = model
+        await query.edit_message_text("🔍 Ищу...")
+        return await execute_search(update, context, query.message, gen=gen)
+    if action.startswith("del:"):
+        model = action.split(":", 1)[1]
+        brand = context.user_data.get("brand", "")
+        type_ru = context.user_data.get("type_ru", "")
+        try:
+            delete_model(user_id, brand, type_ru, model)
+        except Exception:
+            pass
+        return await _show_model_menu(update, context, query.message)
+    if action.startswith("hide_brand:"):
+        model = action.split(":", 1)[1]
+        try:
+            disabled = get_disabled_brand_recs(user_id)
+            disabled.add(model)
+            from goofish_parser.storage.db import set_disabled_brand_recs
+            set_disabled_brand_recs(user_id, disabled)
+        except Exception:
+            pass
+        return await _show_model_menu(update, context, query.message)
+    await query.edit_message_text("🔍 Ищу...")
+    return await execute_search(update, context, query.message, gen=gen)
+
+
+async def on_model_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    if text.lower() in ("/back", "/b"):
+        brand = context.user_data.get("brand", "?")
+        type_ru = context.user_data.get("type_ru", "")
+        is_find = context.user_data.get("find_mode")
+        price_prompt = (
+            "Укажи цену в рублях (₽) или пропусти:" if is_find
+            else "Укажи цену в корейских вонах (₩) или пропусти:"
+        )
+        summary = f"Бренд: *{brand}*"
+        if type_ru:
+            type_ko = context.user_data.get("type_ko", type_ru)
+            summary += f"\nТип: *{type_ru}* → *{type_ko}*"
+        await update.message.reply_text(
+            f"{summary}\n\n{price_prompt}",
+            parse_mode="Markdown",
+            reply_markup=build_price_keyboard(find_mode=is_find),
+        )
+        return PRICE_SELECT
+    context.user_data["model"] = text
+    msg = await update.message.reply_text("🔍 Ищу...")
     return await execute_search(update, context, msg, gen=gen)
 
 
@@ -316,10 +505,15 @@ async def execute_search(
     brand = context.user_data.get("brand", "")
     type_ko = context.user_data.get("type_ko", "")
     type_ru = context.user_data.get("type_ru", "")
+    model = context.user_data.get("model", "")
     price_min = context.user_data.get("price_min")
     price_max = context.user_data.get("price_max")
 
-    label = f"{brand} {type_ru}"
+    search_brand = brand
+    search_type = type_ru
+    if model:
+        search_type = f"{type_ru} {model}".strip()
+    label = f"{brand} {search_type}"
 
     def cancelled():
         return gen is not None and _is_stale(context, user_id, gen)
@@ -358,6 +552,15 @@ async def execute_search(
             f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
             for p, its in platform_results.items() if its
         )
+
+        try:
+            increment_brand_freq(user_id, brand)
+            if type_ru:
+                increment_type_freq(user_id, type_ru)
+            if model:
+                save_model(user_id, brand, type_ru, model)
+        except Exception:
+            pass
 
         if is_find:
             save_items(all_items, label)
@@ -712,20 +915,30 @@ def search_conversation() -> ConversationHandler:
             BRAND_INPUT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_brand_text),
                 CommandHandler("cancel", cancel),
+                CommandHandler("back", on_brand_text),
             ],
             TYPE_SELECT: [
                 CallbackQueryHandler(on_type, pattern=r"^type:"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_type_text),
+                CommandHandler("cancel", cancel),
             ],
             PRICE_SELECT: [CallbackQueryHandler(on_price, pattern=r"^price:")],
             PRICE_INPUT_MIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_price_min),
                 CommandHandler("cancel", cancel),
+                CommandHandler("back", on_price_min),
             ],
             PRICE_INPUT_MAX: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_price_max),
                 CommandHandler("skip", on_price_max),
                 CommandHandler("cancel", cancel),
+                CommandHandler("back", on_price_max),
+            ],
+            MODEL_SELECT: [
+                CallbackQueryHandler(on_model, pattern=r"^model:"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_model_text),
+                CommandHandler("cancel", cancel),
+                CommandHandler("back", on_model_text),
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],

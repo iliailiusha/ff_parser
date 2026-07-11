@@ -256,3 +256,92 @@ def get_recent_deals(limit: int = 20) -> list[dict]:
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def increment_brand_freq(user_id: int, brand: str) -> None:
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.execute(
+        """INSERT INTO user_settings (user_id, setting_key, setting_value, updated_at)
+           VALUES (?, ?, 1, ?)
+           ON CONFLICT(user_id, setting_key) DO UPDATE SET
+               setting_value = CAST(CAST(setting_value AS INTEGER) + 1 AS TEXT),
+               updated_at = ?""",
+        (user_id, f"brand_freq:{brand}", now, now),
+    )
+    conn.commit()
+
+
+def get_top_brands(user_id: int, limit: int = 5) -> list[str]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT setting_key, CAST(setting_value AS INTEGER) as freq FROM user_settings WHERE user_id = ? AND setting_key LIKE 'brand_freq:%' ORDER BY freq DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    return [r["setting_key"].replace("brand_freq:", "") for r in rows]
+
+
+def increment_type_freq(user_id: int, item_type: str) -> None:
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.execute(
+        """INSERT INTO user_settings (user_id, setting_key, setting_value, updated_at)
+           VALUES (?, ?, 1, ?)
+           ON CONFLICT(user_id, setting_key) DO UPDATE SET
+               setting_value = CAST(CAST(setting_value AS INTEGER) + 1 AS TEXT),
+               updated_at = ?""",
+        (user_id, f"type_freq:{item_type}", now, now),
+    )
+    conn.commit()
+
+
+def get_top_types(user_id: int, limit: int = 5) -> list[str]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT setting_key, CAST(setting_value AS INTEGER) as freq FROM user_settings WHERE user_id = ? AND setting_key LIKE 'type_freq:%' ORDER BY freq DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    return [r["setting_key"].replace("type_freq:", "") for r in rows]
+
+
+def save_model(user_id: int, brand: str, item_type: str, model: str) -> None:
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    key = f"saved_model:{brand}|{item_type}|{model}"
+    conn.execute(
+        """INSERT OR REPLACE INTO user_settings (user_id, setting_key, setting_value, updated_at)
+           VALUES (?, ?, ?, ?)""",
+        (user_id, key, model, now),
+    )
+    conn.commit()
+
+
+def get_saved_models(user_id: int, brand: str, item_type: str) -> list[str]:
+    conn = _get_conn()
+    prefix = f"saved_model:{brand}|{item_type}|"
+    rows = conn.execute(
+        "SELECT setting_value FROM user_settings WHERE user_id = ? AND setting_key LIKE ? ORDER BY updated_at DESC",
+        (user_id, f"{prefix}%"),
+    ).fetchall()
+    return [r["setting_value"] for r in rows]
+
+
+def delete_model(user_id: int, brand: str, item_type: str, model: str) -> None:
+    conn = _get_conn()
+    key = f"saved_model:{brand}|{item_type}|{model}"
+    conn.execute(
+        "DELETE FROM user_settings WHERE user_id = ? AND setting_key = ?",
+        (user_id, key),
+    )
+    conn.commit()
+
+
+def get_disabled_brand_recs(user_id: int) -> set[str]:
+    val = get_user_setting(user_id, "disabled_brand_recs", "")
+    if not val:
+        return set()
+    return set(val.split(","))
+
+
+def set_disabled_brand_recs(user_id: int, brands: set[str]) -> None:
+    set_user_setting(user_id, "disabled_brand_recs", ",".join(sorted(brands)))
