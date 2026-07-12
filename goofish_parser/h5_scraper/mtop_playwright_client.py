@@ -175,21 +175,29 @@ class MtopPlaywrightClient:
 
         js_code = f"""
         (async () => {{
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 20000);
             try {{
                 const resp = await fetch('{url}', {{
                     method: 'GET',
                     credentials: 'include',
-                    headers: {self._js_headers()}
+                    headers: {self._js_headers()},
+                    signal: controller.signal,
                 }});
+                clearTimeout(timeout);
                 const text = await resp.text();
                 return {{ok: true, data: text}};
             }} catch (e) {{
+                clearTimeout(timeout);
                 return {{ok: false, error: e.toString()}};
             }}
         }})()
         """
 
-        result = await self._page.evaluate(js_code)
+        result = await asyncio.wait_for(
+            self._page.evaluate(js_code),
+            timeout=30.0,
+        )
 
         if not result.get("ok"):
             error_msg = result.get("error", "unknown")
