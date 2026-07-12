@@ -204,7 +204,7 @@ class MtopPlaywrightClient:
 
         logger.debug("PW-MTOP url: %s", url)
 
-        from playwright.async_api import PlaywrightError as PWError
+        from playwright.async_api import Error as PWError
 
         try:
             raw = await asyncio.wait_for(
