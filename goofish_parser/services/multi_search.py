@@ -177,42 +177,51 @@ async def search_all_platforms(
 
     async def _search_one(platform: str) -> list[GoofishItem]:
         try:
-            searcher_mod = PLATFORM_SEARCHERS.get(platform)
-            if not searcher_mod:
-                return []
-            lang = PLATFORM_LANG.get(platform, "en")
-            translated_type = _translate_type(item_type_ru, lang)
-            mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
-            plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
-            plat_price_min = _convert_price(price_min, price_currency, plat_currency)
-            plat_price_max = _convert_price(price_max, price_currency, plat_currency)
-            result = await mod.search_by_brand_type(
-                brand=brand,
-                item_type=translated_type,
-                price_min=plat_price_min,
-                price_max=plat_price_max,
-                limit=limit_per_platform,
+            return await asyncio.wait_for(
+                _do_search_one(platform),
+                timeout=90.0,
             )
-            if result and result.items:
-                items = result.items
-                if brand:
-                    brand_lower = brand.lower()
-                    before = len(items)
-                    filtered = []
-                    for i in items:
-                        if not i.location:
-                            filtered.append(i)
-                        elif brand_lower in i.location.lower():
-                            filtered.append(i)
-                        else:
-                            logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
-                    items = filtered
-                    logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept")
-                return items
+        except asyncio.TimeoutError:
+            logger.warning("Search timeout on %s (90s)", platform)
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
             return []
+
+    async def _do_search_one(platform: str) -> list[GoofishItem]:
+        searcher_mod = PLATFORM_SEARCHERS.get(platform)
+        if not searcher_mod:
+            return []
+        lang = PLATFORM_LANG.get(platform, "en")
+        translated_type = _translate_type(item_type_ru, lang)
+        mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
+        plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
+        plat_price_min = _convert_price(price_min, price_currency, plat_currency)
+        plat_price_max = _convert_price(price_max, price_currency, plat_currency)
+        result = await mod.search_by_brand_type(
+            brand=brand,
+            item_type=translated_type,
+            price_min=plat_price_min,
+            price_max=plat_price_max,
+            limit=limit_per_platform,
+        )
+        if result and result.items:
+            items = result.items
+            if brand:
+                brand_lower = brand.lower()
+                before = len(items)
+                filtered = []
+                for i in items:
+                    if not i.location:
+                        filtered.append(i)
+                    elif brand_lower in i.location.lower():
+                        filtered.append(i)
+                    else:
+                        logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
+                items = filtered
+                logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept")
+            return items
+        return []
 
     results: dict[str, list[GoofishItem]] = {}
     tasks = []
@@ -246,26 +255,35 @@ async def search_all_platforms_free_text(
 
     async def _search_one(platform: str) -> list[GoofishItem]:
         try:
-            searcher_mod = PLATFORM_SEARCHERS.get(platform)
-            if not searcher_mod:
-                return []
-            mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
-            plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
-            plat_price_min = _convert_price(price_min, price_currency, plat_currency)
-            plat_price_max = _convert_price(price_max, price_currency, plat_currency)
-            result = await mod.search_by_brand_type(
-                brand=query,
-                item_type="",
-                price_min=plat_price_min,
-                price_max=plat_price_max,
-                limit=limit_per_platform,
+            return await asyncio.wait_for(
+                _do_search_one(platform),
+                timeout=90.0,
             )
-            if result and result.items:
-                return result.items
+        except asyncio.TimeoutError:
+            logger.warning("Search timeout on %s (90s)", platform)
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
             return []
+
+    async def _do_search_one(platform: str) -> list[GoofishItem]:
+        searcher_mod = PLATFORM_SEARCHERS.get(platform)
+        if not searcher_mod:
+            return []
+        mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
+        plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
+        plat_price_min = _convert_price(price_min, price_currency, plat_currency)
+        plat_price_max = _convert_price(price_max, price_currency, plat_currency)
+        result = await mod.search_by_brand_type(
+            brand=query,
+            item_type="",
+            price_min=plat_price_min,
+            price_max=plat_price_max,
+            limit=limit_per_platform,
+        )
+        if result and result.items:
+            return result.items
+        return []
 
     results: dict[str, list[GoofishItem]] = {}
     tasks = []

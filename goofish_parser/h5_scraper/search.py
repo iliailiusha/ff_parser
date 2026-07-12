@@ -87,7 +87,10 @@ async def _ensure_client() -> MtopClient:
             from goofish_parser.h5_scraper.browser_auth import BrowserAuthenticator
             logger.info("[GOOFISH] No valid session, running BrowserAuthenticator...")
             auth = BrowserAuthenticator(headless=True)
-            cookies = await auth.get_cookies()
+            cookies = await asyncio.wait_for(
+                auth.get_cookies(),
+                timeout=45.0,
+            )
             cm.save(cookies)
         _client = MtopClient(cookies=cookies)
         return _client
@@ -126,6 +129,24 @@ async def search_by_brand_type(
     """
     query = f"{brand} {item_type}".strip() if item_type else brand
 
+    try:
+        return await asyncio.wait_for(
+            _search(query, brand, item_type, price_min, price_max, limit),
+            timeout=90.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("[GOOFISH] Search timed out for '%s' (90s)", query)
+        return SearchResult(items=[], error="Goofish search timed out", empty=True)
+
+
+async def _search(
+    query: str,
+    brand: str,
+    item_type: str,
+    price_min: Optional[float],
+    price_max: Optional[float],
+    limit: int,
+) -> SearchResult:
     try:
         client = await _ensure_client()
 
