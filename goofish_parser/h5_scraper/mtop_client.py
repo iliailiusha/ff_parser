@@ -38,10 +38,12 @@ class MtopClient:
         self,
         cookies: Optional[dict[str, str]] = None,
         refresh_callback: Optional[RefreshCallback] = None,
+        proxy: Optional[str] = None,
     ) -> None:
         self._cookies: dict[str, str] = cookies or {}
         self._token: str = self._extract_token()
         self._refresh_callback = refresh_callback
+        self._proxy_url: Optional[str] = proxy
         self._session: Optional[AsyncSession] = None
 
     # ── управление куками ──────────────────────────────────
@@ -159,7 +161,7 @@ class MtopClient:
 
         url = f"{MTOP_HOST}/h5/{api}/{version}/"
         session = await self._get_session()
-        proxy = self._pick_proxy()
+        proxy = self._proxy_url if self._proxy_url else self._pick_proxy()
 
         logger.debug("MTOP %s t=%s sign=%s", api, timestamp, sign[:12])
 

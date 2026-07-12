@@ -63,10 +63,12 @@ class Orchestrator:
         headless: bool = True,
         concurrency: Optional[int] = None,
         csv_path: Optional[Path] = None,
+        proxy_url: Optional[str] = None,
     ) -> None:
         self._headless = headless
         self._concurrency = concurrency or H5_CONCURRENCY
         self._csv_path = csv_path or CSV_PATH
+        self._proxy_url = proxy_url
 
         self._cookie_manager = CookieManager()
         self._session_lock = asyncio.Lock()
@@ -86,7 +88,7 @@ class Orchestrator:
         else:
             logger.info("Session loaded from cache (%d cookies)", len(cookies))
 
-        self._client = MtopClient(cookies=cookies)
+        self._client = MtopClient(cookies=cookies, proxy=self._proxy_url)
 
         sem = asyncio.Semaphore(self._concurrency)
 
@@ -120,7 +122,7 @@ class Orchestrator:
             cookies = await self._run_browser_auth()
             self._cookie_manager.save(cookies)
 
-        self._client = MtopClient(cookies=cookies)
+        self._client = MtopClient(cookies=cookies, proxy=self._proxy_url)
 
         filters_manager = FiltersManager()
         item_tracker = ItemTracker()
@@ -380,6 +382,7 @@ class Orchestrator:
                 if self._playwright_client is None:
                     self._playwright_client = MtopPlaywrightClient(
                         headless=self._headless,
+                        proxy={"server": self._proxy_url} if self._proxy_url else None,
                     )
 
                 result = await self._playwright_client.request(
@@ -399,6 +402,7 @@ class Orchestrator:
                     await self._playwright_client.stop()
                     self._playwright_client = MtopPlaywrightClient(
                         headless=self._headless,
+                        proxy={"server": self._proxy_url} if self._proxy_url else None,
                     )
                     self._safe_path_call_count = 0
 

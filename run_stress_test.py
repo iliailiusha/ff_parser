@@ -7,6 +7,7 @@
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -60,10 +61,18 @@ def _backup_and_clear_seen() -> None:
 
 
 async def main() -> None:
+    proxy_url = os.getenv("PROXY_URL")
+    if not proxy_url:
+        logger.critical(
+            "[CRITICAL] Запуск без PROXY_URL на Hugging Face невозможен. "
+            "Скрипт остановлен."
+        )
+        sys.exit(1)
+
     _backup_and_clear_seen()
     fm = _prepare_filters()
 
-    orchestrator = Orchestrator(headless=True)
+    orchestrator = Orchestrator(headless=True, proxy_url=proxy_url)
 
     logger.info("=" * 60)
     logger.info("STRESS TEST START")

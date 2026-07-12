@@ -36,12 +36,18 @@ class MtopPlaywrightClient:
     def __init__(
         self,
         headless: bool = True,
-        proxy: Optional[str] = None,
+        proxy: Optional[dict] = None,
     ) -> None:
         self._headless = headless
-        self._proxy = proxy or (
-            f"http://{H5_PROXIES[0]}" if H5_PROXIES else None
-        )
+        if proxy is not None:
+            self._proxy = proxy
+        elif H5_PROXIES:
+            raw = H5_PROXIES[0]
+            if not raw.startswith("http://") and not raw.startswith("socks5://"):
+                raw = f"http://{raw}"
+            self._proxy = {"server": raw}
+        else:
+            self._proxy = None
         self._browser: Optional[Any] = None
         self._context: Optional[Any] = None
         self._page: Optional[Any] = None
@@ -58,7 +64,7 @@ class MtopPlaywrightClient:
         self._pw = await async_playwright().__aenter__()
         self._browser = await self._pw.chromium.launch(
             headless=self._headless,
-            proxy={"server": self._proxy} if self._proxy else None,
+            proxy=self._proxy,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -75,6 +81,7 @@ class MtopPlaywrightClient:
             viewport={"width": 1920, "height": 1080},
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
+            proxy=self._proxy,
         )
 
         await self._context.add_init_script("""
@@ -197,18 +204,28 @@ class MtopPlaywrightClient:
 
         logger.debug("PW-MTOP url: %s", url)
 
-        result = await asyncio.wait_for(
-            self._page.evaluate(js_code),
-            timeout=30.0,
-        )
-
-        if not result.get("ok"):
-            error_msg = result.get("error", "unknown")
-            logger.error("PW-MTOP evaluate error: %s", error_msg)
-            raise RuntimeError(f"Playwright MTOP evaluate failed: {error_msg}")
+        from playwright.async_api import PlaywrightError as PWError
 
         try:
-            response_data: dict[str, Any] = json.loads(result["data"])
+            raw = await asyncio.wait_for(
+                self._page.evaluate(js_code),
+                timeout=30.0,
+            )
+        except (PWError, TimeoutError, Exception) as exc:
+            logger.error("PW-MTOP evaluate error (proxy?): %s", exc)
+            return {"ret": ["FAIL::PROXY_TIMEOUT_OR_DROP"]}
+
+        if not isinstance(raw, dict):
+            logger.error("PW-MTOP evaluate returned non-dict: %s", type(raw))
+            return {"ret": ["FAIL::PROXY_TIMEOUT_OR_DROP"]}
+
+        if not raw.get("ok"):
+            error_msg = raw.get("error", "unknown")
+            logger.error("PW-MTOP evaluate error: %s", error_msg)
+            return {"ret": ["FAIL::PROXY_TIMEOUT_OR_DROP"]}
+
+        try:
+            response_data: dict[str, Any] = json.loads(raw["data"])
         except (json.JSONDecodeError, KeyError) as exc:
             logger.error("PW-MTOP JSON decode error: %s", exc)
             raise
