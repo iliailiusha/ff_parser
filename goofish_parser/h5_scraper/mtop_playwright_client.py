@@ -12,6 +12,7 @@ import json
 import logging
 import time
 from typing import Any, Optional
+from urllib.parse import quote
 
 from goofish_parser.config import H5_PROXIES
 
@@ -167,7 +168,7 @@ class MtopPlaywrightClient:
             params.update(extra_params)
 
         query_string = "&".join(
-            f"{k}={self._js_quote(str(v))}" for k, v in params.items()
+            f"{k}={quote(str(v), safe='')}" for k, v in params.items()
         )
         url = f"{MTOP_HOST}/h5/{api}/{version}/?{query_string}"
 
@@ -193,6 +194,8 @@ class MtopPlaywrightClient:
             }}
         }})()
         """
+
+        logger.debug("PW-MTOP url: %s", url)
 
         result = await asyncio.wait_for(
             self._page.evaluate(js_code),

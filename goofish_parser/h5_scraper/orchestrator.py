@@ -127,7 +127,11 @@ class Orchestrator:
 
         logger.info("[MONITOR] Starting real-time monitoring loop")
 
+        round_num = 0
+        consecutive_errors = 0
+
         while True:
+            round_num += 1
             round_start = time_module.monotonic()
             filters = filters_manager.get_all_active_filters()
 
@@ -137,14 +141,28 @@ class Orchestrator:
                 continue
 
             for target in filters:
+                keyword = target.get("keyword", "?")
                 try:
-                    await self._process_filter(target, item_tracker)
+                    ok = await self._process_filter(target, item_tracker)
+                    consecutive_errors = 0 if ok else (consecutive_errors + 1)
                 except Exception as exc:
+                    consecutive_errors += 1
                     logger.error(
                         "[MONITOR] Error processing filter %s: %s",
-                        target.get("keyword"),
+                        keyword,
                         exc,
                     )
+
+                # Guard-rail: exponential backoff при серийных ошибках
+                if consecutive_errors > 5:
+                    backoff = random.uniform(30, 60)
+                    logger.critical(
+                        "[CRITICAL] Обнаружен жесткий бан сети. "
+                        "Замедление темпа на %.0fс...",
+                        backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    consecutive_errors = max(consecutive_errors - 1, 5)
 
                 # Рваная пауза между фильтрами (антифрод)
                 await asyncio.sleep(random.uniform(3.5, 5.5))
@@ -152,20 +170,39 @@ class Orchestrator:
             # Полный круг завершён
             elapsed = time_module.monotonic() - round_start
             cookie_count = len(self._client._cookies) if self._client else 0
+            cookies_valid = (
+                self._cookie_manager.is_valid(self._cookie_manager.load())
+                if self._cookie_manager
+                else False
+            )
+            cookie_status = "Валидны" if cookies_valid else "Требуется обновление"
             logger.info(
-                "[MONITOR] Round complete: %.1fs elapsed, "
-                "%d cookies active, %d seen items",
+                "[MONITOR] Круг #%d завершен за %.2f сек. "
+                "Активных фильтров: %d. Сплю перед следующим кругом.",
+                round_num,
                 elapsed,
+                len(filters),
+            )
+            logger.info(
+                "[MONITOR] Статус кук: %s (%d шт). Seen items: %d. "
+                "Safe Path вызовы: %d/%d.",
+                cookie_status,
                 cookie_count,
                 item_tracker.count(),
+                self._safe_path_call_count,
+                SAFE_PATH_RESTART_THRESHOLD,
             )
 
     async def _process_filter(
         self,
         target: dict[str, Any],
         tracker: ItemTracker,
-    ) -> None:
-        """Обрабатывает один фильтр: Fast Path → Safe Path → Tracker."""
+    ) -> bool:
+        """Обрабатывает один фильтр: Fast Path → Safe Path → Tracker.
+
+        Возвращает True при успешном получении ответа (даже если 0 айтемов),
+        False при полной ошибке запроса.
+        """
         keyword = target.get("keyword", "")
         price_min = target.get("min_price", 0.0)
         price_max = target.get("max_price", 1_000_000.0)
@@ -182,12 +219,15 @@ class Orchestrator:
         }
 
         # Fast Path
+        start_ts = time_module.monotonic()
         assert self._client is not None
         result = await self._client.request(
             "mtop.taobao.idlemtopsearch.search",
             data=payload,
             version="1.0",
         )
+        elapsed = time_module.monotonic() - start_ts
+        used_safe_path = False
 
         ret = result.get("ret", [])
         ret_str = str(ret)
@@ -197,12 +237,15 @@ class Orchestrator:
                 "[SAFE PATH] RGV587 on filter '%s', switching to Safe Path",
                 keyword,
             )
+            start_ts = time_module.monotonic()
             result = await self._safe_path_request(
                 "mtop.taobao.idlemtopsearch.search",
                 payload,
             )
             if not result:
-                return
+                return False
+            elapsed = time_module.monotonic() - start_ts
+            used_safe_path = True
 
         # Валидация структуры ответа
         data = result.get("data")
@@ -213,17 +256,19 @@ class Orchestrator:
                 keyword,
                 result,
             )
-            return
+            return False
 
         items = data.get("items") or data.get("itemList") or []
         if not isinstance(items, list):
-            return
+            return False
 
-        if "SUCCESS" in str(result.get("ret", [])):
-            logger.info(
-                "[FAST PATH] Успешно" if "RGV587" not in ret_str
-                else "[SAFE PATH] Успешно",
-            )
+        path_label = "SAFE PATH" if used_safe_path else "FAST PATH"
+        logger.info(
+            "[%s] Ответ за %.2f сек для фильтра '%s'",
+            path_label,
+            elapsed,
+            keyword,
+        )
 
         logger.info(
             "[TRACKER] Filter '%s': found %d items",
@@ -234,6 +279,8 @@ class Orchestrator:
         new_items = tracker.filter_new_items(items)
         for item in new_items:
             await self.dispatch_notification(user_id, item)
+
+        return True
 
     async def dispatch_notification(self, user_id: int, item: dict[str, Any]) -> None:
         """Заглушка отправки уведомления пользователю.
