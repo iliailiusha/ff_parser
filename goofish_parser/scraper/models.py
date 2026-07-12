@@ -7,12 +7,14 @@ PLATFORM_INFO = {
     "bunjang": {"name": "Bunjang", "country": "🇰🇷 Корея", "currency": "₩", "url": "https://bunjang.co.kr"},
     "carousell": {"name": "Carousell", "country": "🇸🇬 Сингапур", "currency": "SGD", "url": "https://www.carousell.sg"},
     "mercari_jp": {"name": "Mercari JP", "country": "🇯🇵 Япония", "currency": "¥", "url": "https://jp.mercari.com"},
+    "goofish": {"name": "Goofish (闲鱼)", "country": "🇨🇳 Китай", "currency": "¥", "url": "https://www.goofish.com"},
 }
 
 COUNTRY_PLATFORMS = {
     "🇰🇷 Корея": ["fruitsfamily", "bunjang"],
     "🇸🇬 Сингапур": ["carousell"],
     "🇯🇵 Япония": ["mercari_jp"],
+    "🇨🇳 Китай": ["goofish"],
 }
 
 ALL_PLATFORMS = sorted(PLATFORM_INFO.keys())

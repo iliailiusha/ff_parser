@@ -5,3 +5,11 @@ python-dotenv>=1.0
 pydantic>=2.0
 curl_cffi>=0.15.0
 cryptography>=41.0
+
+# H5 Scraper (public share pages, no auth)
+aiohttp>=3.9
+beautifulsoup4>=4.12
+lxml>=5.1
+aiofiles>=23.2
+aiosqlite>=0.20
+playwright>=1.50

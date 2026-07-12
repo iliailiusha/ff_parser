@@ -5,7 +5,7 @@ from typing import Optional
 import requests
 
 from goofish_parser.storage.db import get_rate_cache, set_rate_cache
-from goofish_parser.config import KRW_TO_RUB_FALLBACK, SGD_TO_RUB_FALLBACK, JPY_TO_RUB_FALLBACK
+from goofish_parser.config import KRW_TO_RUB_FALLBACK, SGD_TO_RUB_FALLBACK, JPY_TO_RUB_FALLBACK, CNY_TO_RUB_FALLBACK
 
 CBR_URL = "https://www.cbr-xml-daily.ru/daily_json.js"
 logger = logging.getLogger(__name__)
@@ -66,6 +66,10 @@ def get_jpy_to_rub() -> float:
     return _get_rate_to_rub("JPY", 0.55)
 
 
+def get_cny_to_rub() -> float:
+    return _get_rate_to_rub("CNY", CNY_TO_RUB_FALLBACK)
+
+
 def get_rate_to_rub(currency: str) -> float:
     if currency in ("₩", "KRW"):
         return get_krw_to_rub()
@@ -73,6 +77,8 @@ def get_rate_to_rub(currency: str) -> float:
         return get_sgd_to_rub()
     if currency in ("¥", "JPY"):
         return get_jpy_to_rub()
+    if currency == "CNY":
+        return get_cny_to_rub()
     return get_krw_to_rub()
 
 

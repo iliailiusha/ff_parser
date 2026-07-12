@@ -13,6 +13,7 @@ from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL
 from telegram.ext import CallbackQueryHandler
 from goofish_parser.bot.handlers import search_conversation, recent_command, help_command, rate_command, status_command, find_nav_callback
 from goofish_parser.bot.settings import settings_conversation
+from goofish_parser.h5_scraper.search import close as close_goofish
 from goofish_parser.services.exchange_rate import update_rate_daily
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,11 @@ def run_bot() -> None:
     app.add_handler(CommandHandler("rate", rate_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(find_nav_callback, pattern=r"^find_pg:"))
+
+    async def _shutdown(app):
+        logger.info("Shutting down Goofish client...")
+        await close_goofish()
+    app.post_shutdown(_shutdown)
 
     job_queue = app.job_queue
     if job_queue:

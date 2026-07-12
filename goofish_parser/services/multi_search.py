@@ -4,7 +4,7 @@ from typing import Optional
 
 from goofish_parser.scraper.models import GoofishItem, PLATFORM_INFO, ALL_PLATFORMS, COUNTRY_PLATFORMS
 from goofish_parser.storage.db import get_enabled_platforms
-from goofish_parser.services.exchange_rate import get_krw_to_rub, get_jpy_to_rub, get_sgd_to_rub
+from goofish_parser.services.exchange_rate import get_krw_to_rub, get_jpy_to_rub, get_sgd_to_rub, get_cny_to_rub
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ PLATFORM_LANG: dict[str, str] = {
     "bunjang": "ko",
     "carousell": "en",
     "mercari_jp": "ja",
+    "goofish": "zh",
 }
 
 PLATFORM_CURRENCY: dict[str, str] = {
@@ -21,6 +22,7 @@ PLATFORM_CURRENCY: dict[str, str] = {
     "bunjang": "KRW",
     "carousell": "SGD",
     "mercari_jp": "JPY",
+    "goofish": "CNY",
 }
 
 PLATFORM_SEARCHERS: dict[str, str] = {
@@ -28,6 +30,7 @@ PLATFORM_SEARCHERS: dict[str, str] = {
     "bunjang": "goofish_parser.bunjang_scraper.search",
     "carousell": "goofish_parser.carousell_scraper.search",
     "mercari_jp": "goofish_parser.mercari_jp_scraper.search",
+    "goofish": "goofish_parser.h5_scraper.search",
 }
 
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
@@ -142,6 +145,9 @@ def _convert_price(price: Optional[float], from_currency: str, to_currency: str)
         return round(price / rate) if rate else price
     if from_currency == "RUB" and to_currency == "SGD":
         rate = get_sgd_to_rub()
+        return round(price / rate) if rate else price
+    if from_currency == "RUB" and to_currency == "CNY":
+        rate = get_cny_to_rub()
         return round(price / rate) if rate else price
     if from_currency == "KRW" and to_currency == "JPY":
         krw_rate = get_krw_to_rub()
