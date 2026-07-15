@@ -168,6 +168,7 @@ async def search_all_platforms(
     brand: str,
     item_type_ru: str,
     user_id: int,
+    model: str = "",
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     price_currency: str = "KRW",
@@ -194,6 +195,8 @@ async def search_all_platforms(
             return []
         lang = PLATFORM_LANG.get(platform, "en")
         translated_type = _translate_type(item_type_ru, lang)
+        if model:
+            translated_type = f"{translated_type} {model}".strip()
         mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
         plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
         plat_price_min = _convert_price(price_min, price_currency, plat_currency)

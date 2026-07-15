@@ -531,6 +531,7 @@ async def execute_search(
             brand=brand,
             item_type_ru=type_ru,
             user_id=user_id,
+            model=model,
             price_min=price_min,
             price_max=price_max,
             price_currency=price_currency,
