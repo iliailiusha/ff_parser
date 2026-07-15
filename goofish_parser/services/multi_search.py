@@ -195,36 +195,57 @@ async def search_all_platforms(
             return []
         lang = PLATFORM_LANG.get(platform, "en")
         translated_type = _translate_type(item_type_ru, lang)
-        if model:
-            translated_type = f"{translated_type} {model}".strip()
         mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
         plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
         plat_price_min = _convert_price(price_min, price_currency, plat_currency)
         plat_price_max = _convert_price(price_max, price_currency, plat_currency)
-        result = await mod.search_by_brand_type(
-            brand=brand,
-            item_type=translated_type,
-            price_min=plat_price_min,
-            price_max=plat_price_max,
-            limit=limit_per_platform,
-        )
-        if result and result.items:
-            items = result.items
-            if brand:
-                brand_lower = brand.lower()
-                before = len(items)
-                filtered = []
-                for i in items:
-                    if not i.location:
-                        filtered.append(i)
-                    elif brand_lower in i.location.lower():
-                        filtered.append(i)
-                    else:
-                        logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
-                items = filtered
-                logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept")
-            return items
-        return []
+
+        queries = [translated_type]
+        if model:
+            queries.append(f"{translated_type} {model}".strip())
+
+        async def _search(q: str) -> list[GoofishItem]:
+            try:
+                result = await mod.search_by_brand_type(
+                    brand=brand,
+                    item_type=q,
+                    price_min=plat_price_min,
+                    price_max=plat_price_max,
+                    limit=limit_per_platform,
+                )
+                if result and result.items:
+                    return result.items
+            except Exception:
+                pass
+            return []
+
+        raw_lists = await asyncio.gather(*[_search(q) for q in queries], return_exceptions=True)
+
+        seen_ids: set[str] = set()
+        items: list[GoofishItem] = []
+        for r in raw_lists:
+            if not isinstance(r, list):
+                continue
+            for item in r:
+                key = f"{item.source}:{item.item_id}"
+                if key not in seen_ids:
+                    seen_ids.add(key)
+                    items.append(item)
+
+        if items and brand:
+            brand_lower = brand.lower()
+            before = len(items)
+            filtered: list[GoofishItem] = []
+            for i in items:
+                if not i.location:
+                    filtered.append(i)
+                elif brand_lower in i.location.lower():
+                    filtered.append(i)
+                else:
+                    logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
+            items = filtered
+            logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept")
+        return items
 
     results: dict[str, list[GoofishItem]] = {}
     tasks = []
