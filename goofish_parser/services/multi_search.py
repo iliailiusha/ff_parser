@@ -5,6 +5,8 @@ from typing import Optional
 from goofish_parser.scraper.models import GoofishItem, PLATFORM_INFO, ALL_PLATFORMS, COUNTRY_PLATFORMS
 from goofish_parser.storage.db import get_enabled_platforms
 from goofish_parser.services.exchange_rate import get_krw_to_rub, get_jpy_to_rub, get_sgd_to_rub, get_cny_to_rub
+from goofish_parser.services.cache import get_cache, make_search_cache_key
+from goofish_parser.services.smart_search import get_smart_search
 
 logger = logging.getLogger(__name__)
 
@@ -370,3 +372,67 @@ def merge_platform_results(
         all_items.sort(key=lambda x: x.created_at or "", reverse=True)
 
     return all_items
+
+
+async def search_all_platforms_smart(
+    query: str,
+    user_id: int,
+    limit_per_platform: int = 100,
+    price_min: Optional[float] = None,
+    price_max: Optional[float] = None,
+    price_currency: str = "KRW",
+    use_cache: bool = True,
+    cache_ttl: int = 300,
+) -> dict[str, list[GoofishItem]]:
+    """Умный поиск с пайплайном A→B→C и кэшированием.
+    
+    1. Exact match
+    2. Fuzzy matching (RapidFuzz)
+    3. Synonym expansion
+    """
+    enabled = get_enabled_platforms(user_id)
+    cache = get_cache()
+    cache_key = make_search_cache_key(query, enabled, price_min, price_max, price_currency)
+
+    if use_cache:
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            logger.info(f"[SmartSearch] Cache hit for query='{query}'")
+            return cached
+
+    pipeline = get_smart_search()
+    step_results = await pipeline.execute(
+        query=query,
+        platforms=enabled,
+        user_id=user_id,
+        limit_per_platform=limit_per_platform,
+        price_min=price_min,
+        price_max=price_max,
+        price_currency=price_currency,
+    )
+
+    # Берём результаты первой успешной стратегии
+    final_items: list[GoofishItem] = []
+    used_strategy = "none"
+    for res in step_results:
+        if res.items:
+            final_items = res.items
+            used_strategy = res.strategy
+            break
+
+    if not final_items:
+        logger.info(f"[SmartSearch] No items found for query='{query}' after all strategies")
+        return {p: [] for p in enabled}
+
+    # Группируем по платформам для возврата
+    results_by_platform: dict[str, list[GoofishItem]] = {p: [] for p in enabled}
+    for item in final_items:
+        if item.source in results_by_platform:
+            results_by_platform[item.source].append(item)
+
+    logger.info(f"[SmartSearch] Found {len(final_items)} items via {used_strategy} for query='{query}'")
+
+    if use_cache and final_items:
+        await cache.set(cache_key, results_by_platform, ttl=cache_ttl)
+
+    return results_by_platform

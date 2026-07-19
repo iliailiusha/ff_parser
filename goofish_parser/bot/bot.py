@@ -14,6 +14,10 @@ from telegram.ext import CallbackQueryHandler
 from goofish_parser.bot.handlers import search_conversation, recent_command, help_command, rate_command, status_command, find_nav_callback
 from goofish_parser.bot.settings import settings_conversation
 from goofish_parser.services.exchange_rate import update_rate_daily
+from goofish_parser.services.rate_limit import init_rate_limiters, close_rate_limiters
+from goofish_parser.services.cache import close_cache
+from goofish_parser.services.resilience import get_parser_registry, init_parser_registry
+from goofish_parser.ff_scraper.client import close_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,27 @@ async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def _build_app():
     async def _post_init(app: Application) -> None:
+        # Initialize rate limiters
+        from goofish_parser.config import (
+            RATE_LIMIT_DEFAULT_RATE, RATE_LIMIT_DEFAULT_BURST,
+            SEARCH_RATE_LIMIT_WINDOW, SEARCH_RATE_LIMIT_MAX,
+            REDIS_URL, REDIS_DEFAULT_TTL,
+            CIRCUIT_BREAKER_FAILURE_THRESHOLD, CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+        )
+        await init_rate_limiters(
+            default_rate=RATE_LIMIT_DEFAULT_RATE,
+            default_burst=RATE_LIMIT_DEFAULT_BURST,
+            search_window=SEARCH_RATE_LIMIT_WINDOW,
+            search_max=SEARCH_RATE_LIMIT_MAX,
+        )
+        
+        # Initialize Redis cache
+        from goofish_parser.services.cache import init_cache
+        await init_cache(url=REDIS_URL, default_ttl=REDIS_DEFAULT_TTL)
+        
+        # Initialize parser registry with circuit breakers
+        await init_parser_registry()
+
         await app.bot.set_my_commands([
             BotCommand("search", "🔍 Поиск товаров"),
             BotCommand("find", "🔍 Быстрый поиск"),
@@ -56,7 +81,13 @@ def _build_app():
         ])
         logger.info("Bot commands registered")
 
-    builder = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(_post_init)
+    async def _post_shutdown(app: Application) -> None:
+        await close_rate_limiters()
+        await close_cache()
+        await close_http_client()
+        logger.info("Services cleaned up")
+
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(_post_init).post_shutdown(_post_shutdown)
 
     if API_BASE_URL:
         base = API_BASE_URL.strip().rstrip("/")

@@ -3,8 +3,20 @@ from typing import Optional
 
 import httpx
 
+from goofish_parser.config import (
+    HTTP_MAX_CONNECTIONS,
+    HTTP_MAX_KEEPALIVE,
+    HTTP_KEEPALIVE_TIMEOUT,
+)
+
 GRAPHQL_URL = "https://web-server.production.fruitsfamily.com/graphql"
 logger = logging.getLogger(__name__)
+
+_limits = httpx.Limits(
+    max_connections=HTTP_MAX_CONNECTIONS,
+    max_keepalive_connections=HTTP_MAX_KEEPALIVE,
+    keepalive_expiry=HTTP_KEEPALIVE_TIMEOUT,
+)
 
 _http_client = httpx.AsyncClient(
     headers={
@@ -14,6 +26,7 @@ _http_client = httpx.AsyncClient(
         "Referer": "https://fruitsfamily.com/",
     },
     timeout=15,
+    limits=_limits,
 )
 
 
@@ -163,3 +176,8 @@ async def get_product_detail(product_id: int) -> dict:
     data = result.get("data") if isinstance(result, dict) else None
     resp = data.get("seeProductResponse", {}) if isinstance(data, dict) else {}
     return resp.get("seeProduct", {}) if isinstance(resp, dict) else {}
+
+
+async def close_http_client():
+    """Close the HTTP client on shutdown."""
+    await _http_client.aclose()

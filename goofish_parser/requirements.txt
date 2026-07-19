@@ -6,6 +6,15 @@ pydantic>=2.0
 curl_cffi>=0.15.0
 cryptography>=41.0
 
+# Rate limiting & caching
+redis>=5.0
+
+# Smart search
+rapidfuzz>=3.9
+
+# Optional: semantic search (uncomment if needed)
+# sentence-transformers>=3.0
+
 # H5 Scraper (public share pages, no auth)
 aiohttp>=3.9
 beautifulsoup4>=4.12

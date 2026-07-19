@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Optional
 
 from goofish_parser.config import DATA_DIR
+from goofish_parser.services.encryption import get_cookie_encryption
 
 logger = logging.getLogger(__name__)
 
-SESSION_FILE = DATA_DIR / "session_storage.json"
+SESSION_FILE = DATA_DIR / "session_storage.enc"
+OLD_SESSION_FILE = DATA_DIR / "session_storage.json"  # legacy plaintext
 
 # Куки, критичные для работы MTOP
 REQUIRED_COOKIES = {
@@ -30,7 +32,7 @@ TRUST_COOKIES = {
 
 
 class CookieManager:
-    """Управляет хранением сессионных кук в session_storage.json.
+    """Управляет хранением сессионных кук в зашифрованном файле.
 
     Используется для:
       - Сохранения кук, полученных через BrowserAuthenticator.
@@ -40,22 +42,43 @@ class CookieManager:
 
     def __init__(self, path: Optional[Path] = None) -> None:
         self._path = path or SESSION_FILE
+        self._encryption = get_cookie_encryption()
+
+    # ── миграция старого формата ──────────────────────────────
+
+    def _migrate_if_needed(self) -> None:
+        """Мигрирует старый plaintext session_storage.json в зашифрованный формат."""
+        if not OLD_SESSION_FILE.exists() or self._path.exists():
+            return
+        try:
+            raw = OLD_SESSION_FILE.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            cookies = data.get("cookies", {})
+            if cookies:
+                logger.info("Migrating %d cookies from legacy session_storage.json", len(cookies))
+                self.save(cookies)
+                OLD_SESSION_FILE.unlink()
+                logger.info("Legacy session file removed")
+        except Exception as exc:
+            logger.warning("Failed to migrate legacy session: %s", exc)
 
     # ── загрузка ───────────────────────────────────────────
 
     def load(self) -> dict[str, str]:
-        """Загружает куки из session_storage.json.
+        """Загружает куки из зашифрованного файла.
 
         Returns:
             Словарь кук, либо пустой словарь если файла нет.
         """
+        self._migrate_if_needed()
+
         if not self._path.exists():
             logger.info("Session file not found: %s", self._path)
             return {}
 
         try:
-            raw = self._path.read_text(encoding="utf-8")
-            data = json.loads(raw)
+            encrypted = self._path.read_bytes()
+            data = self._encryption.decrypt(encrypted)
             cookies = data.get("cookies", {})
             created = data.get("created_at", "")
             logger.info(
@@ -63,14 +86,14 @@ class CookieManager:
                 len(cookies), self._path.name, created or "?",
             )
             return cookies
-        except (json.JSONDecodeError, OSError) as exc:
+        except Exception as exc:
             logger.warning("Failed to load session: %s", exc)
             return {}
 
     # ── сохранение ─────────────────────────────────────────
 
     def save(self, cookies: dict[str, str]) -> None:
-        """Сохраняет куки в session_storage.json.
+        """Сохраняет куки в зашифрованный файл.
 
         Args:
             cookies: Словарь кук (name -> value).
@@ -81,10 +104,8 @@ class CookieManager:
         }
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            encrypted = self._encryption.encrypt(data)
+            self._path.write_bytes(encrypted)
             logger.info("Saved %d cookies to %s", len(cookies), self._path.name)
         except OSError as exc:
             logger.error("Failed to save session: %s", exc)

@@ -24,6 +24,23 @@ _storage_dir = os.getenv("STORAGE_DIR", "/data" if _is_hf else str(DATA_DIR))
 DB_PATH = Path(_storage_dir) / "storage.db"
 os.makedirs(str(DB_PATH.parent), exist_ok=True)
 
+# Redis
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_DEFAULT_TTL = int(os.getenv("REDIS_DEFAULT_TTL", "300"))
+
+# Rate limiting
+RATE_LIMIT_DEFAULT_RATE = float(os.getenv("RATE_LIMIT_DEFAULT_RATE", "1.0"))
+RATE_LIMIT_DEFAULT_BURST = int(os.getenv("RATE_LIMIT_DEFAULT_BURST", "3"))
+SEARCH_RATE_LIMIT_WINDOW = int(os.getenv("SEARCH_RATE_LIMIT_WINDOW", "60"))
+SEARCH_RATE_LIMIT_MAX = int(os.getenv("SEARCH_RATE_LIMIT_MAX", "10"))
+
+# Circuit breaker
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5"))
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = float(os.getenv("CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "60.0"))
+
+# Cookie encryption
+COOKIE_ENCRYPTION_KEY = os.getenv("COOKIE_ENCRYPTION_KEY", "")
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -96,3 +113,8 @@ MOBILE_USER_AGENTS = [
 
 # Playwright headless mode (True = без GUI, False = видимый браузер)
 H5_HEADLESS = os.getenv("H5_HEADLESS", "true").lower() == "true"
+
+# HTTP Client connection pooling
+HTTP_MAX_CONNECTIONS = int(os.getenv("HTTP_MAX_CONNECTIONS", "50"))
+HTTP_MAX_KEEPALIVE = int(os.getenv("HTTP_MAX_KEEPALIVE", "20"))
+HTTP_KEEPALIVE_TIMEOUT = float(os.getenv("HTTP_KEEPALIVE_TIMEOUT", "30.0"))

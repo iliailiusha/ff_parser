@@ -17,6 +17,8 @@ from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 from goofish_parser.ff_scraper.search import search_products_free_text
 from goofish_parser.services.multi_search import search_all_platforms, search_all_platforms_free_text, merge_platform_results
 from goofish_parser.services.exchange_rate import get_krw_to_rub, get_rate_to_rub
+from goofish_parser.services.rate_limit import get_search_limiter, get_rate_limiter
+from goofish_parser.services.validators import FindInput, SearchInput
 from goofish_parser.storage.db import save_search, save_items, save_scored_items, get_recent_deals, increment_brand_freq, increment_type_freq, save_model, delete_model, get_disabled_brand_recs
 from goofish_parser.scraper.models import PLATFORM_INFO
 
@@ -52,6 +54,17 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     gen = _bump_gen(context, update.effective_user.id)
     context.user_data["_entry_gen"] = gen
     context.user_data.pop("find_mode", None)
+
+    # Rate limiting check
+    search_limiter = get_search_limiter()
+    user_id = update.effective_user.id
+    if not await search_limiter.check(user_id):
+        wait_time = await search_limiter.wait_time(user_id)
+        await update.message.reply_text(
+            f"⏳ Слишком много запросов. Подождите {wait_time:.0f} сек. перед следующим поиском."
+        )
+        return ConversationHandler.END
+
     welcome = (
         "👋 Привет! Я бот для поиска выгодных товаров на азиатских площадках б/у.\n\n"
         "🇰🇷 FruitsFamily + Bunjang | 🇸🇬 Carousell | 🇯🇵 Mercari JP\n\n"
@@ -68,13 +81,32 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     gen = _bump_gen(context, update.effective_user.id)
     context.user_data["_entry_gen"] = gen
+
+    # Rate limiting check
+    search_limiter = get_search_limiter()
+    user_id = update.effective_user.id
+    if not await search_limiter.check(user_id):
+        wait_time = await search_limiter.wait_time(user_id)
+        await update.message.reply_text(
+            f"⏳ Слишком много запросов. Подождите {wait_time:.0f} сек. перед следующим поиском."
+        )
+        return ConversationHandler.END
+
     if context.args:
         text = " ".join(context.args)
-        chat_id = update.effective_chat.id
-        msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Ищу *{text}* по всем площадкам...", parse_mode="Markdown")
+        # Validate input
         try:
-            user_id = update.effective_user.id
-            platform_results = await search_all_platforms_free_text(text, user_id=user_id, limit_per_platform=100)
+            validated = FindInput(query=text)
+            text = validated.query
+        except Exception as e:
+            await update.message.reply_text(f"❌ Некорректный запрос: {e}")
+            return ConversationHandler.END
+
+        chat_id = update.effective_chat.id
+        msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Умный поиск *{text}* по всем площадкам...", parse_mode="Markdown")
+        try:
+            from goofish_parser.services.multi_search import search_all_platforms_smart
+            platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=100)
             items = merge_platform_results(platform_results, sort_by="date")
             if not items:
                 await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
