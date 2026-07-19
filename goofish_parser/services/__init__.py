@@ -19,6 +19,7 @@ from goofish_parser.services.rate_limit import (
 from goofish_parser.services.cache import (
     get_cache,
     close_cache,
+    init_cache,
     make_search_cache_key,
 )
 from goofish_parser.services.encryption import get_cookie_encryption
@@ -59,6 +60,7 @@ __all__ = [
     "close_rate_limiters",
     "get_cache",
     "close_cache",
+    "init_cache",
     "make_search_cache_key",
     "get_cookie_encryption",
     "breaker_registry",

@@ -197,6 +197,11 @@ async def close_cache():
         _cache = None
 
 
+async def init_cache(url: Optional[str] = None, default_ttl: int = 300) -> Any:
+    """Initialize cache (for backward compatibility). Just calls get_cache()."""
+    return get_cache()
+
+
 def make_search_cache_key(
     query: str,
     platforms: List[str],
