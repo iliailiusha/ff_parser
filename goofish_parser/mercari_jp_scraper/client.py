@@ -157,10 +157,8 @@ async def search_mercari_jp(
 
 def _remap_item(item: dict) -> dict:
     item_id = item.get("id", "")
-    if item_id.startswith("m"):
-        item_url = f"https://jp.mercari.com/item/{item_id}"
-    else:
-        item_url = f"https://jp.mercari.com/shop/product/{item_id}"
+    # All Mercari JP items use /item/ URL format
+    item_url = f"https://jp.mercari.com/item/{item_id}"
     logger.debug(f"Remapped Mercari item: id={item_id} url={item_url}")
     brand_raw = item.get("itemBrand") or item.get("brand")
     brand_name = ""
