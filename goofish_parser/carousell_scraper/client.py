@@ -1,11 +1,11 @@
 import json
 import logging
 import re
-import random
 from typing import Any, Optional
 
-import httpx
-from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
+
+from goofish_parser.services.user_agent import get_random_ua
 
 logger = logging.getLogger(__name__)
 
@@ -19,14 +19,6 @@ CAROUSELL_COUNTRIES = {
 }
 
 DEFAULT_COUNTRY = "SG"
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
-]
 
 CAROUSELL_DOMAINS = {
     "SG": "www.carousell.sg",
@@ -43,7 +35,6 @@ _NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__" type="application/json">
 def _parse_next_data(html: str) -> Optional[dict]:
     m = _NEXT_DATA_RE.search(html)
     if not m:
-        logger.warning("__NEXT_DATA__ not found in Carousell page")
         return None
     try:
         return json.loads(m.group(1))
@@ -92,10 +83,7 @@ def _extract_items_from_next_data(data: dict) -> list[dict]:
         for ent in entities:
             if not isinstance(ent, dict):
                 continue
-            item_id = ent.get("id") or ""
-            if not item_id:
-                item_id = ent.get("listingId") or ent.get("cardId") or ""
-
+            item_id = ent.get("id") or ent.get("listingId") or ent.get("cardId") or ""
             if not item_id:
                 continue
 
@@ -195,14 +183,14 @@ async def search_carousell(
     price_max: Optional[int] = None,
 ) -> list[dict]:
     domain = CAROUSELL_DOMAINS.get(country, CAROUSELL_DOMAINS[DEFAULT_COUNTRY])
-    ua = random.choice(USER_AGENTS)
+    ua = get_random_ua()
 
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "en-US,en;q=0.9",
         "Referer": f"https://{domain}/",
+        "Origin": f"https://{domain}",
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
@@ -212,7 +200,7 @@ async def search_carousell(
         "Sec-Fetch-User": "?1",
     }
 
-    params = {"q": query}
+    params: dict[str, str] = {"q": query}
 
     if price_min is not None:
         params["sp"] = str(price_min)
@@ -226,41 +214,36 @@ async def search_carousell(
     elif sort == 3:
         params["sort"] = "time_created_desc"
 
-    url = f"https://{domain}/search/"
-    logger.info(f"Carousell search: {url} params={params}")
+    search_url = f"https://{domain}/search/"
+    logger.info(f"Carousell search: {search_url} params={params}")
 
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=30) as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            html = resp.text
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Carousell HTTP {e.response.status_code}: {e.response.text[:300]}")
-            return []
-        except Exception as e:
-            logger.error(f"Carousell request error: {e}")
-            return []
+    try:
+        async with AsyncSession() as session:
+            resp = await session.get(
+                search_url,
+                params=params,
+                headers=headers,
+                impersonate="chrome124",
+                timeout=30,
+            )
+        html = resp.text
+    except Exception as e:
+        logger.error(f"Carousell request error: {e}")
+        return []
+
+    if resp.status_code == 403 or "Just a moment" in html:
+        logger.warning("Carousell blocked by Cloudflare (403), trying alternate path")
+        return await _search_via_playwright(
+            search_url, params, headers, count, price_min, price_max
+        )
 
     next_data = _parse_next_data(html)
     if not next_data:
-        # Try soup-based parsing as fallback
-        return await _search_via_soup(html, domain)
+        logger.warning("Carousell: no __NEXT_DATA__ in response")
+        return []
 
     items = _extract_items_from_next_data(next_data)
-
-    if not items:
-        bs = BeautifulSoup(html, "lxml")
-        cards = bs.select('[data-testid^="listing-card"], [class*="listing"], [class*="card"]')
-        if cards:
-            logger.info(f"Carousell: found {len(cards)} listing elements via soup, trying __NEXT_DATA__ extraction again")
-            items = _extract_items_from_next_data(next_data)
-
-    # Filter by price if set (server-side may not have applied it)
-    if price_min is not None:
-        items = [i for i in items if _parse_price_val(i.get("price", 0)) >= price_min]
-    if price_max is not None:
-        items = [i for i in items if _parse_price_val(i.get("price", 0)) <= price_max]
-
+    items = _apply_price_filter(items, price_min, price_max)
     items = items[:count]
     logger.info(f"Carousell: found {len(items)} items for query='{query}'")
     return items
@@ -274,6 +257,60 @@ def _parse_price_val(val: Any) -> float:
         return 0.0
 
 
-async def _search_via_soup(html: str, domain: str) -> list[dict]:
-    logger.info("Carousell: trying soup-based fallback parsing")
-    return []
+def _apply_price_filter(
+    items: list[dict],
+    price_min: Optional[int],
+    price_max: Optional[int],
+) -> list[dict]:
+    result = list(items)
+    if price_min is not None:
+        result = [i for i in result if _parse_price_val(i.get("price", 0)) >= price_min]
+    if price_max is not None:
+        result = [i for i in result if _parse_price_val(i.get("price", 0)) <= price_max]
+    return result
+
+
+async def _search_via_playwright(
+    url: str,
+    params: dict[str, str],
+    headers: dict[str, str],
+    count: int,
+    price_min: Optional[int],
+    price_max: Optional[int],
+) -> list[dict]:
+    logger.info("Carousell: trying Playwright fallback")
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent=headers.get("User-Agent", get_random_ua()),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+            )
+            page = await context.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+            qs = "&".join(f"{k}={v}" for k, v in params.items())
+            full_url = f"{url}?{qs}"
+            await page.goto(full_url, wait_until="networkidle", timeout=60000)
+            await page.wait_for_timeout(3000)
+
+            html = await page.content()
+            await browser.close()
+
+        next_data = _parse_next_data(html)
+        if not next_data:
+            logger.warning("Carousell Playwright: no __NEXT_DATA__ found")
+            return []
+
+        items = _extract_items_from_next_data(next_data)
+        items = _apply_price_filter(items, price_min, price_max)
+        items = items[:count]
+        logger.info(f"Carousell Playwright: found {len(items)} items")
+        return items
+
+    except Exception as e:
+        logger.error(f"Carousell Playwright error: {e}")
+        return []
