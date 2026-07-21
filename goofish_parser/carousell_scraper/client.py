@@ -279,38 +279,47 @@ async def _search_via_playwright(
     price_max: Optional[int],
 ) -> list[dict]:
     logger.info("Carousell: trying Playwright fallback")
-    try:
-        from playwright.async_api import async_playwright
+    for attempt in range(2):
+        try:
+            from playwright.async_api import async_playwright
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent=headers.get("User-Agent", get_random_ua()),
-                viewport={"width": 1920, "height": 1080},
-                locale="en-US",
-            )
-            page = await context.new_page()
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    user_agent=headers.get("User-Agent", get_random_ua()),
+                    viewport={"width": 1920, "height": 1080},
+                    locale="en-US",
+                    java_script_enabled=True,
+                )
+                page = await context.new_page()
 
-            qs = "&".join(f"{k}={v}" for k, v in params.items())
-            full_url = f"{url}?{qs}"
-            await page.goto(full_url, wait_until="networkidle", timeout=60000)
-            await page.wait_for_timeout(3000)
+                qs = "&".join(f"{k}={v}" for k, v in params.items())
+                full_url = f"{url}?{qs}"
 
-            html = await page.content()
-            await browser.close()
+                await page.goto(full_url, wait_until="load", timeout=90000)
+                await page.wait_for_timeout(8000)
 
-        next_data = _parse_next_data(html)
-        if not next_data:
-            logger.warning("Carousell Playwright: no __NEXT_DATA__ found")
-            return []
+                title = await page.title()
+                if "Just a moment" in title:
+                    logger.warning(f"Carousell Playwright: still blocked by Cloudflare (attempt {attempt + 1}), retrying")
+                    await browser.close()
+                    continue
 
-        items = _extract_items_from_next_data(next_data)
-        items = _apply_price_filter(items, price_min, price_max)
-        items = items[:count]
-        logger.info(f"Carousell Playwright: found {len(items)} items")
-        return items
+                html = await page.content()
+                await browser.close()
 
-    except Exception as e:
-        logger.error(f"Carousell Playwright error: {e}")
-        return []
+            next_data = _parse_next_data(html)
+            if not next_data:
+                logger.warning("Carousell Playwright: no __NEXT_DATA__ found")
+                return []
+
+            items = _extract_items_from_next_data(next_data)
+            items = _apply_price_filter(items, price_min, price_max)
+            items = items[:count]
+            logger.info(f"Carousell Playwright: found {len(items)} items")
+            return items
+
+        except Exception as e:
+            logger.error(f"Carousell Playwright error (attempt {attempt + 1}): {e}")
+
+    return []
