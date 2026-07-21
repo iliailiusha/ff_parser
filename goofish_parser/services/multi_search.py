@@ -315,6 +315,7 @@ def translate_model(model: str) -> list[str]:
 
 
 MODEL_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "raf simons": {"ko": "라프 시몬스", "en": "Raf Simons", "ja": "ラフ・シモンズ", "zh": "拉夫·西蒙斯"},
     "air force 1": {"ko": "에어포스1", "en": "Air Force 1", "ja": "エアフォース1", "zh": "空军一号"},
     "air jordan 1": {"ko": "에어조던1", "en": "Air Jordan 1", "ja": "エアジョーダン1", "zh": "乔丹1代"},
     "air jordan 4": {"ko": "에어조던4", "en": "Air Jordan 4", "ja": "エアジョーダン4", "zh": "乔丹4代"},
@@ -506,6 +507,22 @@ async def search_all_platforms(
                     type_filtered.append(i)
             items_combined = type_filtered
             logger.info(f"Type filter [{platform}]: {len(items_combined)}/{type_before} kept")
+
+        if model:
+            model_before = len(items_combined)
+            model_lower = model.lower().strip()
+            model_words = [w for w in model_lower.split() if len(w) > 1]
+            translated_model = translate_model_for_platform(model_lower, lang).lower()
+            model_words.extend(w for w in translated_model.split() if len(w) > 1 and w not in model_words)
+            model_filtered: list[GoofishItem] = []
+            for i in items_combined:
+                title_lower = (i.title or "").lower()
+                if all(w in title_lower for w in model_words):
+                    model_filtered.append(i)
+                else:
+                    logger.debug(f"Model filter removed [{platform}] {i.title} (missing model)")
+            items_combined = model_filtered
+            logger.info(f"Model filter [{platform}]: {len(items_combined)}/{model_before} kept")
 
         return items_combined
 
