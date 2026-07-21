@@ -115,6 +115,46 @@ def translate_model(model: str) -> list[str]:
     return list(variants)
 
 
+MODEL_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "air force 1": {"ko": "에어포스1", "en": "Air Force 1", "ja": "エアフォース1", "zh": "空军一号"},
+    "air jordan 1": {"ko": "에어조던1", "en": "Air Jordan 1", "ja": "エアジョーダン1", "zh": "乔丹1代"},
+    "air jordan 4": {"ko": "에어조던4", "en": "Air Jordan 4", "ja": "エアジョーダン4", "zh": "乔丹4代"},
+    "air jordan 11": {"ko": "에어조던11", "en": "Air Jordan 11", "ja": "エアジョーダン11", "zh": "乔丹11代"},
+    "dunk low": {"ko": "덩크 로우", "en": "Dunk Low", "ja": "ダンク ロー", "zh": " Dunk Low"},
+    "dunk high": {"ko": "덩크 하이", "en": "Dunk High", "ja": "ダンク ハイ", "zh": " Dunk High"},
+    "yeezy 350": {"ko": "이지 350", "en": "Yeezy 350", "ja": "イージー 350", "zh": "Yeezy 350"},
+    "yeezy 700": {"ko": "이지 700", "en": "Yeezy 700", "ja": "イージー 700", "zh": "Yeezy 700"},
+    "new balance 990": {"ko": "뉴발란스 990", "en": "New Balance 990", "ja": "ニューバランス 990", "zh": "新百伦 990"},
+    "new balance 550": {"ko": "뉴발란스 550", "en": "New Balance 550", "ja": "ニューバランス 550", "zh": "新百伦 550"},
+    "samba": {"ko": "삼바", "en": "Samba", "ja": "サンバ", "zh": "桑巴"},
+    "gazelle": {"ko": "가젤", "en": "Gazelle", "ja": "ガゼル", "zh": "羚羊"},
+    "stan smith": {"ko": "스탠 스미스", "en": "Stan Smith", "ja": "スタンスミス", "zh": "斯坦史密斯"},
+    "ultraboost": {"ko": "울트라부스트", "en": "Ultraboost", "ja": "ウルトラブースト", "zh": "Ultraboost"},
+    "nmd": {"ko": "NMD", "en": "NMD", "ja": "NMD", "zh": "NMD"},
+    "speed trainer": {"ko": "스피드 트레이너", "en": "Speed Trainer", "ja": "スピードトレーナー", "zh": "Speed Trainer"},
+    "triple s": {"ko": "트리플 S", "en": "Triple S", "ja": "トリプル S", "zh": "Triple S"},
+    "old skool": {"ko": "올드 스쿨", "en": "Old Skool", "ja": "オールドスクール", "zh": "Old Skool"},
+    "authentic": {"ko": "어센틱", "en": "Authentic", "ja": "オーセンティック", "zh": "Authentic"},
+    "era": {"ko": "에라", "en": "Era", "ja": "エラ", "zh": "Era"},
+    "slip on": {"ko": "슬립온", "en": "Slip On", "ja": "スリッポン", "zh": "Slip On"},
+    "classic leather": {"ko": "클래식 레더", "en": "Classic Leather", "ja": "クラシック レザー", "zh": "Classic Leather"},
+    "club c": {"ko": "클럽 C", "en": "Club C", "ja": "クラブ C", "zh": "Club C"},
+    "chuck 70": {"ko": "척 70", "en": "Chuck 70", "ja": "チャック 70", "zh": "Chuck 70"},
+    "chuck taylor": {"ko": "척 테일러", "en": "Chuck Taylor", "ja": "チャックテイラー", "zh": "Chuck Taylor"},
+    "gel lyte": {"ko": "젤 라이트", "en": "Gel Lyte", "ja": "ゲルライト", "zh": "Gel Lyte"},
+    "gel kayano": {"ko": "젤 카야노", "en": "Gel Kayano", "ja": "ゲルカヤノ", "zh": "Gel Kayano"},
+    "gt-2160": {"ko": "GT-2160", "en": "GT-2160", "ja": "GT-2160", "zh": "GT-2160"},
+    "mexico 66": {"ko": "멕시코 66", "en": "Mexico 66", "ja": "メキシコ 66", "zh": "Mexico 66"},
+}
+
+
+def translate_model_for_platform(model: str, lang: str) -> str:
+    ml = model.lower().strip()
+    if ml in MODEL_TRANSLATIONS:
+        return MODEL_TRANSLATIONS[ml].get(lang, model)
+    return model
+
+
 def _translate_type(item_type: str, lang: str) -> str:
     if not item_type:
         return ""
@@ -202,10 +242,6 @@ async def search_all_platforms(
         plat_price_min = _convert_price(price_min, price_currency, plat_currency)
         plat_price_max = _convert_price(price_max, price_currency, plat_currency)
 
-        queries = [translated_type]
-        if model:
-            queries.append(f"{translated_type} {model}".strip())
-
         async def _search(q: str) -> list[GoofishItem]:
             try:
                 result = await mod.search_by_brand_type(
@@ -221,33 +257,74 @@ async def search_all_platforms(
                 pass
             return []
 
-        raw_lists = await asyncio.gather(*[_search(q) for q in queries], return_exceptions=True)
+        base_query = translated_type
+        if model:
+            base_query = f"{translated_type} {model}".strip()
 
+        items_original = await _search(base_query)
+        
+        # Only try translated model if original returned no results
+        items_translated = []
+        translated_model = ""
+        if model and not items_original:
+            translated_model = translate_model_for_platform(model, lang)
+            if translated_model != model:
+                translated_query = f"{translated_type} {translated_model}".strip()
+                items_translated = await _search(translated_query)
+
+        items_combined = []
         seen_ids: set[str] = set()
-        items: list[GoofishItem] = []
-        for r in raw_lists:
-            if not isinstance(r, list):
-                continue
-            for item in r:
+        
+        def add_items(items_list: list[GoofishItem], source_label: str):
+            nonlocal items_combined
+            for item in items_list:
                 key = f"{item.source}:{item.item_id}"
                 if key not in seen_ids:
                     seen_ids.add(key)
-                    items.append(item)
+                    items_combined.append(item)
+                    logger.debug(f"[{platform}] {source_label}: added {item.item_id} - {item.title[:40]}")
 
-        if items and brand:
+        add_items(items_original, "original")
+        
+        # If original has results, also try translated to compare
+        if items_original and model:
+            translated_model = translate_model_for_platform(model, lang)
+            if translated_model != model:
+                translated_query = f"{translated_type} {translated_model}".strip()
+                items_translated = await _search(translated_query)
+                add_items(items_translated, "translated")
+                
+                # If both have 5+, keep both
+                if len(items_original) >= 5 and len(items_translated) >= 5:
+                    logger.info(f"[{platform}] Both original({len(items_original)}) and translated({len(items_translated)}) have 5+ items, keeping both")
+                elif len(items_translated) > len(items_original):
+                    logger.info(f"[{platform}] Translated model '{translated_model}' gave more results ({len(items_translated)} vs {len(items_original)})")
+                    # Keep only translated (which includes original via dedup)
+                    items_combined = [i for i in items_combined if f"{i.source}:{i.item_id}" in seen_ids]
+                elif items_translated:
+                    logger.info(f"[{platform}] Original model gave more results ({len(items_original)} vs {len(items_translated)})")
+        elif items_translated:
+            add_items(items_translated, "translated_only")
+            logger.info(f"[{platform}] No results with original model, found {len(items_translated)} with translated model '{translated_model}'")
+
+        if not items_combined:
+            return []
+
+        if brand:
             brand_lower = brand.lower()
-            before = len(items)
+            before = len(items_combined)
             filtered: list[GoofishItem] = []
-            for i in items:
+            for i in items_combined:
                 if not i.location:
                     filtered.append(i)
                 elif brand_lower in i.location.lower():
                     filtered.append(i)
                 else:
                     logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
-            items = filtered
-            logger.info(f"Brand filter [{platform}]: {len(items)}/{before} kept")
-        return items
+            items_combined = filtered
+            logger.info(f"Brand filter [{platform}]: {len(items_combined)}/{before} kept")
+
+        return items_combined
 
     results: dict[str, list[GoofishItem]] = {}
     tasks = []

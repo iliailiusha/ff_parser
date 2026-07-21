@@ -575,22 +575,6 @@ async def execute_search(
 
         all_items = merge_platform_results(platform_results, sort_by="date")
 
-        if model:
-            model_lower = model.lower()
-            before = len(all_items)
-            from goofish_parser.services.multi_search import translate_model
-            variants = translate_model(model)
-            all_items = [i for i in all_items if any(v in (i.title or "").lower() for v in variants)]
-            kept = len(all_items)
-            logger.info(f"Model filter [{model}] variants={variants}: {kept}/{before} kept")
-            if kept == 0:
-                text = f"😕 Нет объяв с моделью *{model}* по запросу *{label}*."
-                try:
-                    await msg.edit_text(text, parse_mode="Markdown")
-                except AttributeError:
-                    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown")
-                return ConversationHandler.END
-
         if not all_items:
             text = f"😕 Ничего не найдено по запросу *{label}*.\nПопробуйте изменить параметры или проверьте /settings."
             try:
