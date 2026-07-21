@@ -8,6 +8,7 @@ from goofish_parser.config import (
     HTTP_MAX_KEEPALIVE,
     HTTP_KEEPALIVE_TIMEOUT,
 )
+from goofish_parser.services.user_agent import get_random_ua
 
 GRAPHQL_URL = "https://web-server.production.fruitsfamily.com/graphql"
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ _limits = httpx.Limits(
 _http_client = httpx.AsyncClient(
     headers={
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": get_random_ua(),
         "Origin": "https://fruitsfamily.com",
         "Referer": "https://fruitsfamily.com/",
     },
@@ -53,6 +54,7 @@ query searchProducts($filter: ProductFilter!, $sort: String!, $limit: Int!, $off
         brand
         price
         original_price
+        description
         status
         size
         condition

@@ -151,6 +151,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
 
         cat = raw.get("category") or ""
         sub_cat = raw.get("sub_category") or ""
+        description = raw.get("description") or ""
 
         return GoofishItem(
             item_id=item_id,
@@ -169,6 +170,7 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
             price_original_cny=original_price,
             discount_rate=discount_rate,
             created_at=created_at,
+            description=description,
         )
     except Exception:
         logger.exception("Failed to parse item")

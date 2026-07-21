@@ -45,6 +45,7 @@ class GoofishItem(BaseModel):
     source: str = "fruitsfamily"
     country: str = "🇰🇷 Корея"
     currency: str = "₩"
+    description: str = ""
     alt_sources: list[str] = []
     alt_urls: list[str] = []
 

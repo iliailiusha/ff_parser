@@ -9,6 +9,8 @@ import httpx
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
+from goofish_parser.services.user_agent import get_random_ua
+
 logger = logging.getLogger(__name__)
 
 SEARCH_URL = "https://api.mercari.jp/v2/entities:search"
@@ -106,7 +108,7 @@ async def search_mercari_jp(
         "X-Platform": "web",
         "Accept": "*/*",
         "Content-Type": "application/json; charset=utf-8",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "User-Agent": get_random_ua(),
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -177,4 +179,5 @@ def _remap_item(item: dict) -> dict:
         "updated": item.get("updated", 0),
         "item_url": item_url,
         "brand": brand_name,
+        "description": item.get("description") or item.get("shortDescription") or "",
     }

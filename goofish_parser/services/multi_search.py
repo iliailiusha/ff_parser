@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import re
 from typing import Optional
+
+from rapidfuzz import fuzz
 
 from goofish_parser.scraper.models import GoofishItem, PLATFORM_INFO, ALL_PLATFORMS, COUNTRY_PLATFORMS
 from goofish_parser.storage.db import get_enabled_platforms
@@ -9,6 +12,25 @@ from goofish_parser.services.cache import get_cache, make_search_cache_key
 from goofish_parser.services.smart_search import get_smart_search
 
 logger = logging.getLogger(__name__)
+
+FUZZY_BRAND_THRESHOLD = 85
+
+_NORMALIZE_RE = re.compile(r"[-–—\s]+")
+
+def _normalize_text(text: str) -> str:
+    """Strip hyphens/dashes, collapse whitespace, lowercase."""
+    return _NORMALIZE_RE.sub(" ", text).strip().lower()
+
+def _compact_text(text: str) -> str:
+    """Remove all separators entirely for matching (gt-2160 -> gt2160)."""
+    return re.sub(r"[-–—\s]", "", text).lower()
+
+def _get_item_text(item: GoofishItem) -> str:
+    """Combine title and description for full-text search."""
+    parts = [item.title or ""]
+    if item.description:
+        parts.append(item.description)
+    return " ".join(parts).lower()
 
 
 PLATFORM_LANG: dict[str, str] = {
@@ -470,12 +492,23 @@ async def search_all_platforms(
 
         if brand:
             brand_lower = brand.lower()
+            brand_norm = _normalize_text(brand)
+            brand_compact = _compact_text(brand)
             before = len(items_combined)
             brand_filtered: list[GoofishItem] = []
             for i in items_combined:
                 title_lower = (i.title or "").lower()
                 location_lower = (i.location or "").lower()
+                text_lower = _get_item_text(i)
+                text_norm = _normalize_text(text_lower)
+                text_compact = _compact_text(text_lower)
                 if brand_lower in location_lower or brand_lower in title_lower:
+                    brand_filtered.append(i)
+                elif brand_lower in text_lower:
+                    brand_filtered.append(i)
+                elif brand_compact and brand_compact in text_compact:
+                    brand_filtered.append(i)
+                elif fuzz.partial_ratio(brand_norm, text_norm) >= FUZZY_BRAND_THRESHOLD:
                     brand_filtered.append(i)
                 else:
                     logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
@@ -498,10 +531,10 @@ async def search_all_platforms(
                         logger.debug(f"Type filter removed [{platform}] {i.title} (category={i.category!r})")
                     continue
                 # Title-based filter (fallback for items without category)
-                title_lower = (i.title or "").lower()
-                if any(kw in title_lower for kw in searched_keywords):
+                text_lower = _get_item_text(i)
+                if any(kw in text_lower for kw in searched_keywords):
                     type_filtered.append(i)
-                elif other_keywords and any(kw in title_lower for kw in other_keywords):
+                elif other_keywords and any(kw in text_lower for kw in other_keywords):
                     logger.debug(f"Type filter removed [{platform}] {i.title} (type mismatch)")
                 else:
                     type_filtered.append(i)
@@ -511,13 +544,33 @@ async def search_all_platforms(
         if model:
             model_before = len(items_combined)
             model_lower = model.lower().strip()
-            model_words = [w for w in model_lower.split() if len(w) > 1]
+            orig_words = [w for w in model_lower.split() if len(w) > 1]
+            orig_norm = _normalize_text(model_lower)
+            orig_compact = _compact_text(model_lower)
             translated_model = translate_model_for_platform(model_lower, lang).lower()
-            model_words.extend(w for w in translated_model.split() if len(w) > 1 and w not in model_words)
+            trans_words = [w for w in translated_model.split() if len(w) > 1 and w not in orig_words]
+            trans_norm = _normalize_text(translated_model) if translated_model != model_lower else ""
+            trans_compact = _compact_text(translated_model) if translated_model != model_lower else ""
             model_filtered: list[GoofishItem] = []
             for i in items_combined:
-                title_lower = (i.title or "").lower()
-                if all(w in title_lower for w in model_words):
+                text_lower = _get_item_text(i)
+                text_norm = _normalize_text(text_lower)
+                text_compact = _compact_text(text_lower)
+                # 1) All original words in combined text
+                if all(w in text_lower for w in orig_words):
+                    model_filtered.append(i)
+                # 2) All translated words in combined text
+                elif trans_words and all(w in text_lower for w in trans_words):
+                    model_filtered.append(i)
+                # 3) Normalized match (e.g. "GT-2160" matches "gt 2160" in title)
+                elif orig_norm and orig_norm in text_norm:
+                    model_filtered.append(i)
+                elif trans_norm and trans_norm in text_norm:
+                    model_filtered.append(i)
+                # 4) Compact match (e.g. "GT-2160" matches "gt2160" in title)
+                elif orig_compact and orig_compact in text_compact:
+                    model_filtered.append(i)
+                elif trans_compact and trans_compact in text_compact:
                     model_filtered.append(i)
                 else:
                     logger.debug(f"Model filter removed [{platform}] {i.title} (missing model)")

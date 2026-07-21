@@ -1,8 +1,11 @@
 import logging
+import random
 import time
 from typing import Any, Optional
 
 import httpx
+
+from goofish_parser.services.user_agent import get_random_ua
 
 BUNJANG_SEARCH_URL = "https://api.bunjang.co.kr/api/1/find_v2.json"
 logger = logging.getLogger(__name__)
@@ -20,7 +23,7 @@ async def search_bunjang(
 
     async with httpx.AsyncClient(
         headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": get_random_ua(),
             "Accept": "application/json",
             "Referer": "https://m.bunjang.co.kr/",
         },

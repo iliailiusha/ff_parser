@@ -33,8 +33,9 @@ def _carousell_item_to_model(raw: dict) -> Optional[GoofishItem]:
         created_at = str(raw.get("created_at", "") or raw.get("listing_time", ""))
         status = str(raw.get("status", "") or "")
         username = str(seller_raw.get("username", "")) if isinstance(seller_raw, dict) else ""
+        description = str(raw.get("description", "") or "")
 
-        url = f"https://www.carousell.sg/p/{item_id}"
+        url = raw.get("url", "") or f"https://www.carousell.sg/p/{item_id}"
 
         return GoofishItem(
             item_id=item_id,
@@ -48,6 +49,7 @@ def _carousell_item_to_model(raw: dict) -> Optional[GoofishItem]:
             seller_id=seller_id or username,
             status=status,
             created_at=created_at,
+            description=description,
             source="carousell",
             country=PLATFORM_INFO["carousell"]["country"],
             currency=PLATFORM_INFO["carousell"]["currency"],

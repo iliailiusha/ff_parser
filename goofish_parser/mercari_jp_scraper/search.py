@@ -57,6 +57,8 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
             else:
                 item_url = f"https://jp.mercari.com/shop/product/{item_id}"
 
+        description = str(raw.get("description", "") or "")
+
         return GoofishItem(
             item_id=item_id,
             title=title,
@@ -69,6 +71,7 @@ def _mercari_item_to_model(raw: dict) -> Optional[GoofishItem]:
             seller_id=seller_id,
             status=status,
             created_at=created_at_str,
+            description=description,
             source="mercari_jp",
             country=PLATFORM_INFO["mercari_jp"]["country"],
             currency=PLATFORM_INFO["mercari_jp"]["currency"],
