@@ -113,7 +113,7 @@ async def search_by_brand_type(
     item_type: str = "",
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
-    limit: int = 50,
+    limit: int = 500,
 ) -> SearchResult:
     """Поиск на Goofish по бренду/ключевому слову.
 
@@ -132,10 +132,10 @@ async def search_by_brand_type(
     try:
         return await asyncio.wait_for(
             _search(query, brand, item_type, price_min, price_max, limit),
-            timeout=90.0,
+            timeout=180.0,
         )
     except asyncio.TimeoutError:
-        logger.warning("[GOOFISH] Search timed out for '%s' (90s)", query)
+        logger.warning("[GOOFISH] Search timed out for '%s' (180s)", query)
         return SearchResult(items=[], error="Goofish search timed out", empty=True)
 
 
@@ -149,62 +149,68 @@ async def _search(
 ) -> SearchResult:
     try:
         client = await _ensure_client()
+        page_size = 100
+        max_pages = max(1, limit // page_size + 1)
+        all_items: list[GoofishItem] = []
 
-        payload: dict[str, Any] = {
-            "keyword": query,
-            "pageNumber": 1,
-            "pageSize": min(limit, 100),
-            "sort": "realtime",
-            "searchFrom": "h5",
-        }
-        if price_min is not None:
-            payload["priceMin"] = int(price_min * 100)
-        if price_max is not None:
-            payload["priceMax"] = int(price_max * 100)
+        for page in range(1, max_pages + 1):
+            if len(all_items) >= limit:
+                break
 
-        # Fast Path
-        result = await client.request(
-            "mtop.taobao.idlemtopsearch.search",
-            data=payload,
-            version="1.0",
-        )
+            payload: dict[str, Any] = {
+                "keyword": query,
+                "pageNumber": page,
+                "pageSize": page_size,
+                "sort": "realtime",
+                "searchFrom": "h5",
+            }
+            if price_min is not None:
+                payload["priceMin"] = int(price_min * 100)
+            if price_max is not None:
+                payload["priceMax"] = int(price_max * 100)
 
-        ret = result.get("ret", [])
-        ret_str = str(ret)
-
-        if "RGV587_ERROR" in ret_str or "挤爆" in ret_str:
-            logger.info("[GOOFISH] RGV587 on '%s' — switching to Safe Path", query)
-            pw = await _ensure_pw_client()
-            result = await pw.request(
+            result = await client.request(
                 "mtop.taobao.idlemtopsearch.search",
                 data=payload,
                 version="1.0",
             )
-            if result:
-                # Sync cookies after Safe Path success
-                cookies = await pw.get_cookies()
-                if cookies:
-                    cm = CookieManager()
-                    cm.save(cookies)
-                    client.update_cookies(cookies)
 
-        items_raw = _extract_items(result)
-        if not items_raw:
-            return SearchResult(items=[], empty=True)
+            ret = result.get("ret", [])
+            ret_str = str(ret)
 
-        items = []
-        for raw in items_raw[:limit]:
-            parsed = _parse_item(raw)
-            if parsed:
-                items.append(parsed)
+            if "RGV587_ERROR" in ret_str or "挤爆" in ret_str:
+                logger.info("[GOOFISH] RGV587 on '%s' (page %d) — switching to Safe Path", query, page)
+                pw = await _ensure_pw_client()
+                result = await pw.request(
+                    "mtop.taobao.idlemtopsearch.search",
+                    data=payload,
+                    version="1.0",
+                )
+                if result:
+                    cookies = await pw.get_cookies()
+                    if cookies:
+                        cm = CookieManager()
+                        cm.save(cookies)
+                        client.update_cookies(cookies)
+
+            items_raw = _extract_items(result)
+            if not items_raw:
+                break
+
+            remaining = limit - len(all_items)
+            for raw in items_raw[:remaining]:
+                parsed = _parse_item(raw)
+                if parsed:
+                    all_items.append(parsed)
+                    if len(all_items) >= limit:
+                        break
 
         logger.info(
-            "[GOOFISH] '%s': found %d items (raw=%d)",
+            "[GOOFISH] '%s': found %d items",
             query,
-            len(items),
-            len(items_raw),
+            len(all_items),
         )
-        return SearchResult(items=items, empty=not bool(items))
+        return SearchResult(items=all_items, empty=not bool(all_items))
 
     except Exception as exc:
         logger.error("[GOOFISH] Search error for '%s': %s", query, exc)

@@ -57,7 +57,7 @@ async def _execute_smart_search(
     user_id = update.effective_user.id
     key = f"{key_prefix}_{user_id}"
     try:
-        platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=100)
+        platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=500)
         items = merge_platform_results(platform_results, sort_by="date")
         if not items:
             await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
@@ -602,7 +602,7 @@ async def execute_search(
             price_min=price_min,
             price_max=price_max,
             price_currency=price_currency,
-            limit_per_platform=50,
+            limit_per_platform=500,
         )
 
         if cancelled():

@@ -273,7 +273,7 @@ async def search_all_platforms(
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     price_currency: str = "KRW",
-    limit_per_platform: int = 50,
+    limit_per_platform: int = 500,
 ) -> dict[str, list[GoofishItem]]:
     enabled = get_enabled_platforms(user_id)
 
@@ -281,10 +281,10 @@ async def search_all_platforms(
         try:
             return await asyncio.wait_for(
                 _do_search_one(platform),
-                timeout=90.0,
+                timeout=180.0,
             )
         except asyncio.TimeoutError:
-            logger.warning("Search timeout on %s (90s)", platform)
+            logger.warning("Search timeout on %s (180s)", platform)
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
@@ -366,7 +366,7 @@ async def search_all_platforms(
 async def search_all_platforms_free_text(
     query: str,
     user_id: int = 0,
-    limit_per_platform: int = 100,
+    limit_per_platform: int = 500,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     price_currency: str = "KRW",
@@ -388,10 +388,10 @@ async def search_all_platforms_free_text(
         try:
             return await asyncio.wait_for(
                 _do_search_one(platform),
-                timeout=90.0,
+                timeout=180.0,
             )
         except asyncio.TimeoutError:
-            logger.warning("Search timeout on %s (90s)", platform)
+            logger.warning("Search timeout on %s (180s)", platform)
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
@@ -494,7 +494,7 @@ def merge_platform_results(
 async def search_all_platforms_smart(
     query: str,
     user_id: int,
-    limit_per_platform: int = 100,
+    limit_per_platform: int = 500,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     price_currency: str = "KRW",

@@ -68,13 +68,13 @@ def _convert_booleans(obj: Any) -> Any:
 
 async def search_mercari_jp(
     query: str,
-    limit: int = 50,
+    limit: int = 500,
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,
     sort: str = "SORT_CREATED_TIME",
     order: str = "ORDER_DESC",
 ) -> list[dict]:
-    page_size = min(limit, 120)
+    page_size = 120
     session_id = f"MERCARI_BOT_{uuid.uuid4()}"
 
     payload: dict[str, Any] = {
@@ -100,7 +100,7 @@ async def search_mercari_jp(
         payload["searchCondition"]["priceMax"] = price_max
 
     all_items: list[dict] = []
-    max_pages = 5
+    max_pages = 10
 
     headers = {
         "X-Platform": "web",
@@ -111,6 +111,9 @@ async def search_mercari_jp(
 
     async with httpx.AsyncClient(timeout=30) as client:
         for _ in range(max_pages):
+            if len(all_items) >= limit:
+                break
+
             dpop = _generate_dpop(
                 uuid=str(uuid.uuid4()),
                 method="POST",
@@ -130,28 +133,24 @@ async def search_mercari_jp(
                 data = resp.json()
             except Exception as e:
                 logger.error(f"Mercari JP API error: {e}")
-                return []
+                break
 
             items = data.get("items", [])
             if not items:
                 logger.debug(f"Mercari response data: {json.dumps(data, ensure_ascii=False)[:300]}")
                 break
 
-            logger.debug(f"Mercari first item keys: {list(items[0].keys())}")
-            logger.debug(f"Mercari first item full: {json.dumps(items[0], ensure_ascii=False)[:500]}")
-
             for item in items:
                 all_items.append(_remap_item(item))
                 if len(all_items) >= limit:
-                    logger.info(f"Mercari JP API found {len(all_items)} items")
-                    return all_items
+                    break
 
             next_token = data.get("meta", {}).get("nextPageToken")
             if not next_token:
                 break
             payload["pageToken"] = next_token
 
-    logger.info(f"Mercari JP API found {len(all_items)} items (filtered from API results)")
+    logger.info(f"Mercari JP API found {len(all_items)} items")
     return all_items
 
 

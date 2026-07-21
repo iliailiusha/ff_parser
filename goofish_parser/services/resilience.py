@@ -134,7 +134,7 @@ class ResilientParser:
             try:
                 result = await asyncio.wait_for(
                     self.primary(*args, **kwargs),
-                    timeout=90.0,
+                    timeout=180.0,
                 )
                 if not result.error:
                     return result

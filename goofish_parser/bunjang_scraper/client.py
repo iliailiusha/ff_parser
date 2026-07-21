@@ -10,8 +10,9 @@ logger = logging.getLogger(__name__)
 
 async def search_bunjang(
     query: str,
-    max_page: int = 10,
+    max_page: int = 50,
     per_page: int = 100,
+    max_items: int = 500,
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,
 ) -> list[dict]:
@@ -26,6 +27,9 @@ async def search_bunjang(
         timeout=15,
     ) as client:
         for page in range(1, max_page + 1):
+            if len(all_items) >= max_items:
+                break
+
             params: dict[str, Any] = {
                 "q": query,
                 "page": page,
@@ -57,4 +61,4 @@ async def search_bunjang(
             all_items.extend(items)
             time.sleep(0.5)
 
-    return all_items
+    return all_items[:max_items]

@@ -181,21 +181,33 @@ async def search_items(criteria: SearchCriteria) -> SearchResult:
     if criteria.price_max_cny is not None:
         price_max = int(criteria.price_max_cny)
 
-    items = await search_products(
-        query=query,
-        sort="POPULAR",
-        limit=criteria.limit,
-        price_min=price_min,
-        price_max=price_max,
-    )
+    all_raw: list[dict] = []
+    page_size = 100
+    max_pages = max(1, criteria.limit // page_size + 1)
 
-    if not items:
+    for page in range(max_pages):
+        if len(all_raw) >= criteria.limit:
+            break
+        offset = page * page_size
+        items = await search_products(
+            query=query,
+            sort="POPULAR",
+            limit=min(page_size, criteria.limit - len(all_raw)),
+            offset=offset,
+            price_min=price_min,
+            price_max=price_max,
+        )
+        if not items:
+            break
+        all_raw.extend(items)
+
+    if not all_raw:
         return SearchResult(empty=True)
 
-    parsed = [_ff_item_to_model(i) for i in items]
+    parsed = [_ff_item_to_model(i) for i in all_raw]
     parsed = [i for i in parsed if i is not None]
     filtered = [i for i in parsed if i.price_cny > 0]
-    return SearchResult(items=filtered, empty=len(filtered) == 0)
+    return SearchResult(items=filtered[:criteria.limit], empty=len(filtered) == 0)
 
 
 async def search_by_brand_type(
@@ -203,7 +215,7 @@ async def search_by_brand_type(
     item_type: str,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
-    limit: int = 30,
+    limit: int = 500,
 ) -> SearchResult:
     criteria = SearchCriteria(
         brand=brand,
@@ -218,7 +230,7 @@ async def search_by_brand_type(
 async def search_products_free_text(
     query: str,
     sort: str = "NEW",
-    limit: int = 30,
+    limit: int = 500,
     auto_detect_clothing: bool = True,
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,

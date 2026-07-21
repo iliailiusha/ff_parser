@@ -70,8 +70,10 @@ async def search_items(criteria: SearchCriteria) -> SearchResult:
     price_min = int(criteria.price_min_cny) if criteria.price_min_cny is not None else None
     price_max = int(criteria.price_max_cny) if criteria.price_max_cny is not None else None
 
+    per_page = 100
+    max_page = max(10, criteria.limit // per_page + 1)
     raw_items = await search_bunjang(
-        query, max_page=10, per_page=100,
+        query, max_page=max_page, per_page=per_page, max_items=criteria.limit,
         price_min=price_min, price_max=price_max,
     )
 
@@ -94,7 +96,7 @@ async def search_by_brand_type(
     item_type: str,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
-    limit: int = 100,
+    limit: int = 500,
 ) -> SearchResult:
     criteria = SearchCriteria(
         brand=brand,

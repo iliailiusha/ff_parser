@@ -109,7 +109,7 @@ async def search_by_brand_type(
     item_type: str,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
-    limit: int = 50,
+    limit: int = 500,
 ) -> SearchResult:
     criteria = SearchCriteria(
         brand=brand,

@@ -46,8 +46,8 @@ async def graphql(query: str, variables: dict | None = None, timeout: int = 15) 
 
 
 SEARCH_QUERY = """
-query searchProducts($filter: ProductFilter!, $sort: String!, $limit: Int!) {
-    items: searchProducts(filter: $filter, sort: $sort, limit: $limit) {
+query searchProducts($filter: ProductFilter!, $sort: String!, $limit: Int!, $offset: Int) {
+    items: searchProducts(filter: $filter, sort: $sort, limit: $limit, offset: $offset) {
         id
         title
         brand
@@ -127,6 +127,7 @@ async def search_products(
     query: str,
     sort: str = "POPULAR",
     limit: int = 30,
+    offset: int = 0,
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,
     show_only: str = "selling",
@@ -135,11 +136,12 @@ async def search_products(
     if not query_str:
         return []
 
-    safe_limit = min(limit, 200)
+    safe_limit = min(limit, 500)
     variables = {
         "filter": {"query": query_str, "show_only": show_only},
         "sort": sort,
         "limit": safe_limit,
+        "offset": offset,
     }
     if price_min is not None:
         variables["filter"]["price_min"] = price_min
