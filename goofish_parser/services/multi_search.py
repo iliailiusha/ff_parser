@@ -161,6 +161,76 @@ for _ru, _ko in CLOTHING_RU_TO_KO.items():
     if _en:
         _EN_TO_KO[_en] = _ko
 
+# All type keywords per language for type filtering
+_ALL_TYPE_KEYWORDS: dict[str, set[str]] = {}
+for _ru, _ko in CLOTHING_RU_TO_KO.items():
+    for w in _ko.replace("/", " ").split():
+        _ALL_TYPE_KEYWORDS.setdefault("ko", set()).add(w.lower())
+for _ru, _ja in CLOTHING_JA.items():
+    for w in _ja.replace("/", " ").split():
+        _ALL_TYPE_KEYWORDS.setdefault("ja", set()).add(w.lower())
+for _ru, _en in CLOTHING_EN.items():
+    for w in _en.replace("/", " ").split():
+        _ALL_TYPE_KEYWORDS.setdefault("en", set()).add(w.lower())
+# Add English keywords to all languages as fallback
+for lang in ("ko", "ja"):
+    _ALL_TYPE_KEYWORDS[lang].update(_ALL_TYPE_KEYWORDS.get("en", set()))
+# Add Russian keywords to all languages
+_ALL_TYPE_KEYWORDS["en"].update(w.lower() for w in CLOTHING_RU_TO_KO)
+_ALL_TYPE_KEYWORDS["ko"].update(w.lower() for w in CLOTHING_RU_TO_KO)
+_ALL_TYPE_KEYWORDS["ja"].update(w.lower() for w in CLOTHING_RU_TO_KO)
+
+
+_TYPE_SYNONYMS: dict[str, dict[str, set[str]]] = {
+    "кроссовки": {
+        "ko": {"스니커즈", "런닝화"},
+        "ja": {"シューズ"},
+        "en": {"running shoes", "trainers"},
+    },
+    "кеды": {
+        "ko": {"스니커즈"},
+    },
+    "футболка": {
+        "en": {"tee"},
+    },
+    "штаны": {
+        "en": {"trousers"},
+        "ko": {"바지"},
+    },
+    "брюки": {
+        "ko": {"바지"},
+    },
+    "купальник": {
+        "ko": {"비키니"},
+    },
+}
+
+
+def _get_type_keywords(item_type_ru: str, lang: str) -> set[str]:
+    if not item_type_ru:
+        return set()
+    keywords = set()
+    ru_lower = item_type_ru.lower()
+    if lang == "ko":
+        kw = CLOTHING_RU_TO_KO.get(ru_lower, "")
+        keywords.update(w.lower() for w in kw.replace("/", " ").split())
+    elif lang == "ja":
+        kw = CLOTHING_JA.get(ru_lower, "")
+        keywords.update(w.lower() for w in kw.replace("/", " ").split())
+    else:
+        kw = CLOTHING_EN.get(ru_lower, "")
+        keywords.update(w.lower() for w in kw.replace("/", " ").split())
+    # Always add English and Russian variants
+    en_kw = CLOTHING_EN.get(ru_lower, "")
+    keywords.update(w.lower() for w in en_kw.replace("/", " ").split())
+    keywords.add(ru_lower)
+    # Add per-language synonyms
+    syns = _TYPE_SYNONYMS.get(ru_lower, {})
+    if syns:
+        for lang_syn in (lang, "en"):
+            keywords.update(syns.get(lang_syn, set()))
+    return keywords
+
 
 def translate_model(model: str) -> list[str]:
     ml = model.lower().strip()
@@ -330,16 +400,33 @@ async def search_all_platforms(
         if brand:
             brand_lower = brand.lower()
             before = len(items_combined)
-            filtered: list[GoofishItem] = []
+            brand_filtered: list[GoofishItem] = []
             for i in items_combined:
-                if not i.location:
-                    filtered.append(i)
-                elif brand_lower in i.location.lower():
-                    filtered.append(i)
+                title_lower = (i.title or "").lower()
+                location_lower = (i.location or "").lower()
+                if brand_lower in location_lower or brand_lower in title_lower:
+                    brand_filtered.append(i)
                 else:
                     logger.debug(f"Brand filter removed [{platform}] {i.title} (location={i.location!r})")
-            items_combined = filtered
+            items_combined = brand_filtered
             logger.info(f"Brand filter [{platform}]: {len(items_combined)}/{before} kept")
+
+        if item_type_ru:
+            type_before = len(items_combined)
+            searched_keywords = _get_type_keywords(item_type_ru, lang)
+            all_keywords = _ALL_TYPE_KEYWORDS.get(lang, set())
+            other_keywords = all_keywords - searched_keywords
+            type_filtered: list[GoofishItem] = []
+            for i in items_combined:
+                title_lower = (i.title or "").lower()
+                if any(kw in title_lower for kw in searched_keywords):
+                    type_filtered.append(i)
+                elif other_keywords and any(kw in title_lower for kw in other_keywords):
+                    logger.debug(f"Type filter removed [{platform}] {i.title} (type mismatch)")
+                else:
+                    type_filtered.append(i)
+            items_combined = type_filtered
+            logger.info(f"Type filter [{platform}]: {len(items_combined)}/{type_before} kept")
 
         return items_combined
 
