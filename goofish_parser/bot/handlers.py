@@ -46,6 +46,40 @@ BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX, BRAND
 FIND_ITEMS_PER_PAGE = 5
 
 
+async def _execute_smart_search(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    msg,
+    gen: int | None = None,
+    key_prefix: str = "find",
+) -> int:
+    user_id = update.effective_user.id
+    key = f"{key_prefix}_{user_id}"
+    try:
+        platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=100)
+        items = merge_platform_results(platform_results, sort_by="date")
+        if not items:
+            await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
+            return ConversationHandler.END
+        save_items(items, text)
+        platform_summary = " | ".join(
+            f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
+            for p, its in platform_results.items() if its
+        )
+        context.user_data[key] = {
+            "items": items,
+            "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
+            "query": text,
+            "platform_summary": platform_summary,
+        }
+        await _show_find_page(update, context, msg, key, 0, gen=gen)
+    except Exception as e:
+        logger.exception("Smart search error")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Ошибка: {e}")
+    return ConversationHandler.END
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
@@ -94,40 +128,18 @@ async def find_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     if context.args:
         text = " ".join(context.args)
-        # Validate input
         try:
             validated = FindInput(query=text)
             text = validated.query
         except Exception as e:
             await update.message.reply_text(f"❌ Некорректный запрос: {e}")
             return ConversationHandler.END
-
-        chat_id = update.effective_chat.id
-        msg = await context.bot.send_message(chat_id=chat_id, text=f"🔍 Умный поиск *{text}* по всем площадкам...", parse_mode="Markdown")
-        try:
-            from goofish_parser.services.multi_search import search_all_platforms_smart
-            platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=100)
-            items = merge_platform_results(platform_results, sort_by="date")
-            if not items:
-                await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
-                return ConversationHandler.END
-            save_items(items, text)
-            platform_summary = " | ".join(
-                f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
-                for p, its in platform_results.items() if its
-            )
-            key = f"find_{update.effective_user.id}"
-            context.user_data[key] = {
-                "items": items,
-                "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
-                "query": text,
-                "platform_summary": platform_summary,
-            }
-            await _show_find_page(update, context, msg, key, 0, gen=gen)
-        except Exception as e:
-            logger.exception("Find error")
-            await context.bot.send_message(chat_id=chat_id, text=f"❌ Ошибка: {e}")
-        return ConversationHandler.END
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"🔍 Умный поиск *{text}* по всем площадкам...",
+            parse_mode="Markdown",
+        )
+        return await _execute_smart_search(update, context, text, msg, gen=gen)
 
     context.user_data["find_mode"] = True
     await update.message.reply_text(
@@ -218,30 +230,7 @@ async def on_freetext_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return BRAND_SELECT
     msg = await update.message.reply_text(f"🔍 Ищу *{text}* по всем площадкам...", parse_mode="Markdown")
-    try:
-        from goofish_parser.services.multi_search import search_all_platforms_smart
-        platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=100)
-        items = merge_platform_results(platform_results, sort_by="date")
-        if not items:
-            await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
-            return ConversationHandler.END
-        save_items(items, text)
-        platform_summary = " | ".join(
-            f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
-            for p, its in platform_results.items() if its
-        )
-        key = f"find_{update.effective_user.id}"
-        context.user_data[key] = {
-            "items": items,
-            "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
-            "query": text,
-            "platform_summary": platform_summary,
-        }
-        await _show_find_page(update, context, msg, key, 0, gen=gen)
-    except Exception as e:
-        logger.exception("Free text search error")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Ошибка: {e}")
-    return ConversationHandler.END
+    return await _execute_smart_search(update, context, text, msg, gen=gen)
 
 
 async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
