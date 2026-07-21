@@ -149,6 +149,9 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
 
         url = f"https://fruitsfamily.com/search/{quote(title)}?sort=RELEVANCE&price_min={int(price)}&price_max={int(price)}"
 
+        cat = raw.get("category") or ""
+        sub_cat = raw.get("sub_category") or ""
+
         return GoofishItem(
             item_id=item_id,
             title=title,
@@ -161,7 +164,8 @@ def _ff_item_to_model(raw: dict) -> GoofishItem | None:
             location=brand,
             badge=f"{like_count} ♥" if like_count else "",
             images=images,
-            category_id="",
+            category=cat,
+            sub_category=sub_cat,
             price_original_cny=original_price,
             discount_rate=discount_rate,
             created_at=created_at,

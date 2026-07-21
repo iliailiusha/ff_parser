@@ -31,6 +31,8 @@ class GoofishItem(BaseModel):
     images: list[str] = []
     seller_id: str = ""
     category_id: str = ""
+    category: str = ""
+    sub_category: str = ""
     price_original_cny: float = 0.0
     discount_rate: Optional[float] = None
     is_liked: bool = False

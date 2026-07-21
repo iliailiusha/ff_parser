@@ -181,6 +181,64 @@ _ALL_TYPE_KEYWORDS["ko"].update(w.lower() for w in CLOTHING_RU_TO_KO)
 _ALL_TYPE_KEYWORDS["ja"].update(w.lower() for w in CLOTHING_RU_TO_KO)
 
 
+_FF_CATEGORY_MAP: dict[str, set[str]] = {
+    "кроссовки": {"신발"},
+    "кеды": {"신발"},
+    "ботинки": {"신발"},
+    "сапоги": {"신발"},
+    "сланцы": {"신발"},
+    "тапки": {"신발"},
+    "футболка": {"상의"},
+    "рубашка": {"상의"},
+    "свитер": {"상의"},
+    "свитшот": {"상의"},
+    "толстовка": {"상의"},
+    "лонгслив": {"상의"},
+    "майка": {"상의"},
+    "пиджак": {"상의"},
+    "жилетка": {"상의"},
+    "худи": {"상의", "아우터"},
+    "куртка": {"아우터"},
+    "пуховик": {"아우터"},
+    "пальто": {"아우터"},
+    "ветровка": {"아우터"},
+    "бомбер": {"아우터"},
+    "косуха": {"아우터"},
+    "джинсовка": {"아우터"},
+    "флиска": {"아우터"},
+    "джинсы": {"하의"},
+    "штаны": {"하의"},
+    "брюки": {"하의"},
+    "шорты": {"하의"},
+    "карго": {"하의"},
+    "джоггеры": {"하의"},
+    "треники": {"하의"},
+    "легинсы": {"하의"},
+    "платье": {"원피스"},
+    "костюм": {"셋업"},
+    "спортивный костюм": {"셋업"},
+    "шапка": {"모자"},
+    "кепка": {"모자"},
+    "панама": {"모자"},
+    "бейсболка": {"모자"},
+    "рюкзак": {"가방"},
+    "сумка": {"가방"},
+    "ремень": {"액세서리"},
+    "носки": {"양말"},
+    "шарф": {"액세서리"},
+    "перчатки": {"액세서리"},
+    "часы": {"시계"},
+    "очки": {"액세서리"},
+    "браслет": {"액세서리"},
+    "цепочка": {"액세서리"},
+    "кольцо": {"반지"},
+    "серьги": {"액세서리"},
+    "купальник": {"수영복"},
+    "плавки": {"수영복"},
+    "трусы": {"하의"},
+    "колготки": {"하의"},
+}
+
 _TYPE_SYNONYMS: dict[str, dict[str, set[str]]] = {
     "кроссовки": {
         "ko": {"스니커즈", "런닝화"},
@@ -425,11 +483,20 @@ async def search_all_platforms(
 
         if item_type_ru:
             type_before = len(items_combined)
+            allowed_cats = _FF_CATEGORY_MAP.get(item_type_ru) if platform == "fruitsfamily" else None
             searched_keywords = _get_type_keywords(item_type_ru, lang)
             all_keywords = _ALL_TYPE_KEYWORDS.get(lang, set())
             other_keywords = all_keywords - searched_keywords
             type_filtered: list[GoofishItem] = []
             for i in items_combined:
+                # Category-based filter (FruitsFamily only, items with category field)
+                if platform == "fruitsfamily" and allowed_cats and i.category:
+                    if i.category in allowed_cats:
+                        type_filtered.append(i)
+                    else:
+                        logger.debug(f"Type filter removed [{platform}] {i.title} (category={i.category!r})")
+                    continue
+                # Title-based filter (fallback for items without category)
                 title_lower = (i.title or "").lower()
                 if any(kw in title_lower for kw in searched_keywords):
                     type_filtered.append(i)

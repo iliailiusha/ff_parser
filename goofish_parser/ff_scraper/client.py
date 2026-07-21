@@ -62,6 +62,8 @@ query searchProducts($filter: ProductFilter!, $sort: String!, $limit: Int!, $off
         discount_rate
         like_count
         is_visible
+        category
+        sub_category
         seller {
             id
         }
