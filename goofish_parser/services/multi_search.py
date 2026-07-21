@@ -37,6 +37,65 @@ PLATFORM_SEARCHERS: dict[str, str] = {
 
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 
+CLOTHING_JA: dict[str, str] = {
+    "кроссовки": "スニーカー",
+    "кеды": "スニーカー",
+    "ботинки": "ブーツ",
+    "сапоги": "ブーツ",
+    "футболка": "Tシャツ",
+    "рубашка": "シャツ",
+    "свитер": "セーター",
+    "свитшот": "スウェット",
+    "толстовка": "スウェット",
+    "худи": "パーカー",
+    "куртка": "ジャケット",
+    "пуховик": "ダウン",
+    "пальто": "コート",
+    "ветровка": "ウィンドブレーカー",
+    "джинсы": "ジーンズ",
+    "штаны": "パンツ",
+    "брюки": "ズボン",
+    "шорты": "ショーツ",
+    "платье": "ワンピース",
+    "костюм": "スーツ",
+    "пиджак": "ブレザー",
+    "жилетка": "ベスト",
+    "лонгслив": "長袖Tシャツ",
+    "майка": "タンクトップ",
+    "спортивный костюм": "トラックスーツ",
+    "бомбер": "ボンバージャケット",
+    "косуха": "ライダースジャケット",
+    "джинсовка": "デニムジャケット",
+    "флиска": "フリース",
+    "карго": "カーゴパンツ",
+    "джоггеры": "ジョガーパンツ",
+    "треники": "スウェットパンツ",
+    "легинсы": "レギンス",
+    "шапка": "帽子",
+    "кепка": "キャップ",
+    "рюкзак": "バックパック",
+    "сумка": "バッグ",
+    "ремень": "ベルト",
+    "носки": "靴下",
+    "шарф": "マフラー",
+    "перчатки": "手袋",
+    "часы": "時計",
+    "очки": "眼鏡",
+    "браслет": "ブレスレット",
+    "цепочка": "ネックレス",
+    "кольцо": "指輪",
+    "серьги": "イヤリング",
+    "купальник": "水着",
+    "плавки": "水着",
+    "трусы": "下着",
+    "колготки": "タイツ",
+    "сланцы": "サンダル",
+    "тапки": "スリッパ",
+    "панама": "バケットハット",
+    "бейсболка": "キャップ",
+    "бандана": "バンダナ",
+}
+
 CLOTHING_EN: dict[str, str] = {
     "кроссовки": "sneakers",
     "кеды": "sneakers",
@@ -161,7 +220,7 @@ def _translate_type(item_type: str, lang: str) -> str:
     if lang == "ko":
         return CLOTHING_RU_TO_KO.get(item_type, item_type)
     if lang == "ja":
-        return CLOTHING_EN.get(item_type, item_type)
+        return CLOTHING_JA.get(item_type, item_type)
     return CLOTHING_EN.get(item_type, item_type)
 
 
@@ -262,53 +321,11 @@ async def search_all_platforms(
             base_query = f"{translated_type} {model}".strip()
 
         items_original = await _search(base_query)
-        
-        # Only try translated model if original returned no results
-        items_translated = []
-        translated_model = ""
-        if model and not items_original:
-            translated_model = translate_model_for_platform(model, lang)
-            if translated_model != model:
-                translated_query = f"{translated_type} {translated_model}".strip()
-                items_translated = await _search(translated_query)
 
-        items_combined = []
-        seen_ids: set[str] = set()
-        
-        def add_items(items_list: list[GoofishItem], source_label: str):
-            nonlocal items_combined
-            for item in items_list:
-                key = f"{item.source}:{item.item_id}"
-                if key not in seen_ids:
-                    seen_ids.add(key)
-                    items_combined.append(item)
-                    logger.debug(f"[{platform}] {source_label}: added {item.item_id} - {item.title[:40]}")
-
-        add_items(items_original, "original")
-        
-        # If original has results, also try translated to compare
-        if items_original and model:
-            translated_model = translate_model_for_platform(model, lang)
-            if translated_model != model:
-                translated_query = f"{translated_type} {translated_model}".strip()
-                items_translated = await _search(translated_query)
-                add_items(items_translated, "translated")
-                
-                # If both have 5+, keep both
-                if len(items_original) >= 5 and len(items_translated) >= 5:
-                    logger.info(f"[{platform}] Both original({len(items_original)}) and translated({len(items_translated)}) have 5+ items, keeping both")
-                elif len(items_translated) > len(items_original):
-                    logger.info(f"[{platform}] Translated model '{translated_model}' gave more results ({len(items_translated)} vs {len(items_original)})")
-                    # Keep only translated (which includes original via dedup)
-                    items_combined = [i for i in items_combined if f"{i.source}:{i.item_id}" in seen_ids]
-                elif items_translated:
-                    logger.info(f"[{platform}] Original model gave more results ({len(items_original)} vs {len(items_translated)})")
-        elif items_translated:
-            add_items(items_translated, "translated_only")
-            logger.info(f"[{platform}] No results with original model, found {len(items_translated)} with translated model '{translated_model}'")
-
-        if not items_combined:
+        if not items_original:
             return []
+
+        items_combined = list(items_original)
 
         if brand:
             brand_lower = brand.lower()
@@ -348,13 +365,24 @@ async def search_all_platforms(
 
 async def search_all_platforms_free_text(
     query: str,
-    user_id: int,
+    user_id: int = 0,
     limit_per_platform: int = 100,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     price_currency: str = "KRW",
+    platforms: Optional[list[str]] = None,
 ) -> dict[str, list[GoofishItem]]:
-    enabled = get_enabled_platforms(user_id)
+    if platforms is not None:
+        enabled = [p for p in platforms if p in PLATFORM_SEARCHERS]
+    else:
+        enabled = get_enabled_platforms(user_id)
+
+    # Detect Russian clothing type words in the query for per-platform translation
+    query_lower = query.lower()
+    clothing_types_found: list[str] = []
+    for ru_word in CLOTHING_RU_TO_KO:
+        if ru_word in query_lower:
+            clothing_types_found.append(ru_word)
 
     async def _search_one(platform: str) -> list[GoofishItem]:
         try:
@@ -377,8 +405,20 @@ async def search_all_platforms_free_text(
         plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
         plat_price_min = _convert_price(price_min, price_currency, plat_currency)
         plat_price_max = _convert_price(price_max, price_currency, plat_currency)
+
+        # Translate clothing types in query for this platform's language
+        lang = PLATFORM_LANG.get(platform, "en")
+        platform_query = query
+        for ru_word in clothing_types_found:
+            translated = _translate_type(ru_word, lang)
+            if translated and translated != ru_word:
+                platform_query = platform_query.replace(ru_word, translated, 1)
+
+        if platform_query != query:
+            logger.debug(f"[{platform}] Translated query: '{query}' -> '{platform_query}'")
+
         result = await mod.search_by_brand_type(
-            brand=query,
+            brand=platform_query,
             item_type="",
             price_min=plat_price_min,
             price_max=plat_price_max,
@@ -396,7 +436,7 @@ async def search_all_platforms_free_text(
 
     platform_lists = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for p, lst in zip([p for p in enabled if p in PLATFORM_SEARCHERS], platform_lists):
+    for p, lst in zip(enabled, platform_lists):
         if isinstance(lst, list):
             results[p] = lst
         elif isinstance(lst, Exception):

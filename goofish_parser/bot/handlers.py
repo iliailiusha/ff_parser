@@ -42,7 +42,7 @@ def _is_stale(context: ContextTypes.DEFAULT_TYPE, user_id: int, gen: int | None)
     bd = context.application.bot_data
     return bd.get(_GEN_KEY, {}).get(user_id, 0) != gen
 
-BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX, BRAND_INPUT, MODEL_SELECT = range(7)
+BRAND_SELECT, TYPE_SELECT, PRICE_SELECT, PRICE_INPUT_MIN, PRICE_INPUT_MAX, BRAND_INPUT, MODEL_SELECT, FREETEXT_INPUT = range(8)
 FIND_ITEMS_PER_PAGE = 5
 
 
@@ -144,7 +144,16 @@ async def on_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
-    brand = query.data.split(":", 1)[1]
+    action = query.data.split(":", 1)[1]
+    if action == "freetext":
+        await query.edit_message_text(
+            "✏️ Напиши любой поисковый запрос:\n\n"
+            "Например: `Adidas Raf Simons кроссовки`, `Nike Air Force 1`, `Rick Owens`\n\n"
+            "Или /cancel чтобы отменить.",
+            parse_mode="Markdown",
+        )
+        return FREETEXT_INPUT
+    brand = action
     context.user_data["brand"] = brand
     await query.edit_message_text(
         f"Бренд: *{brand}*\n\nТеперь выбери тип одежды:",
@@ -196,6 +205,43 @@ async def on_brand_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if _is_stale(context, user_id, gen):
         return ConversationHandler.END
     return TYPE_SELECT
+
+
+async def on_freetext_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gen = context.user_data.get("_entry_gen")
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    if text.lower() in ("/back", "/b", "/cancel", "/c"):
+        await update.message.reply_text(
+            "👋 Выбери бренд:",
+            reply_markup=build_brand_keyboard(user_id=user_id),
+        )
+        return BRAND_SELECT
+    msg = await update.message.reply_text(f"🔍 Ищу *{text}* по всем площадкам...", parse_mode="Markdown")
+    try:
+        from goofish_parser.services.multi_search import search_all_platforms_smart
+        platform_results = await search_all_platforms_smart(text, user_id=user_id, limit_per_platform=100)
+        items = merge_platform_results(platform_results, sort_by="date")
+        if not items:
+            await msg.edit_text(f"😕 Ничего не найдено по запросу *{text}*.", parse_mode="Markdown")
+            return ConversationHandler.END
+        save_items(items, text)
+        platform_summary = " | ".join(
+            f"{PLATFORM_INFO.get(p, {}).get('country', p)} {len(its)}шт"
+            for p, its in platform_results.items() if its
+        )
+        key = f"find_{update.effective_user.id}"
+        context.user_data[key] = {
+            "items": items,
+            "total_pages": (len(items) + FIND_ITEMS_PER_PAGE - 1) // FIND_ITEMS_PER_PAGE,
+            "query": text,
+            "platform_summary": platform_summary,
+        }
+        await _show_find_page(update, context, msg, key, 0, gen=gen)
+    except Exception as e:
+        logger.exception("Free text search error")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Ошибка: {e}")
+    return ConversationHandler.END
 
 
 async def on_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -979,6 +1025,11 @@ def search_conversation() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_model_text),
                 CommandHandler("cancel", cancel),
                 CommandHandler("back", on_model_text),
+            ],
+            FREETEXT_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_freetext_text),
+                CommandHandler("cancel", cancel),
+                CommandHandler("back", on_freetext_text),
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],

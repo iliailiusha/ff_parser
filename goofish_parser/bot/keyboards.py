@@ -42,6 +42,7 @@ def build_brand_keyboard(user_id: int = 0) -> InlineKeyboardMarkup:
             if freq_row:
                 buttons.append(freq_row)
 
+    buttons.append([InlineKeyboardButton("🔍 Свой запрос", callback_data="brand:freetext")])
     buttons.append([InlineKeyboardButton("✏️ Свой бренд", callback_data="brand:custom")])
     return InlineKeyboardMarkup(buttons)
 
