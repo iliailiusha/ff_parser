@@ -3,6 +3,8 @@ import logging
 import re
 from typing import Any, Optional
 
+import json as json_mod
+
 from curl_cffi.requests import AsyncSession
 
 from goofish_parser.carousell_scraper.cookie_manager import CarousellCookieManager
@@ -284,18 +286,20 @@ async def search_carousell(
         html, cookies = await _fetch_via_browser(search_url, params)
 
     if not html:
-        logger.error("Carousell: all methods failed")
-        return []
+        logger.info("Carousell: trying GraphQL API fallback")
+        items = await _search_via_api(query, count, domain, sort, price_min, price_max)
+        return items
 
     next_data = _parse_next_data(html)
-    if not next_data:
-        logger.warning("Carousell: no __NEXT_DATA__ in response")
-        return []
+    if next_data:
+        items = _extract_items_from_next_data(next_data)
+        items = _apply_price_filter(items, price_min, price_max)
+        items = items[:count]
+        logger.info(f"Carousell: found {len(items)} items for query='{query}'")
+        return items
 
-    items = _extract_items_from_next_data(next_data)
-    items = _apply_price_filter(items, price_min, price_max)
-    items = items[:count]
-    logger.info(f"Carousell: found {len(items)} items for query='{query}'")
+    logger.warning("Carousell: no __NEXT_DATA__ in response, trying API fallback")
+    items = await _search_via_api(query, count, domain, sort, price_min, price_max)
     return items
 
 
@@ -305,6 +309,144 @@ def _parse_price_val(val: Any) -> float:
         return float(s) if s else 0.0
     except (ValueError, AttributeError):
         return 0.0
+
+
+SEARCH_GRAPHQL = """
+query SearchTabs($query: String!, $count: Int!) {
+    search(query: $query, count: $count, offset: 0) {
+        listings {
+            id
+            title
+            price {
+                amount
+                currency
+            }
+            images {
+                url
+            }
+            location
+            condition
+            seller {
+                id
+                username
+            }
+            createdAt
+            description
+            slug
+        }
+    }
+}
+"""
+
+
+async def _search_via_api(
+    query: str,
+    count: int,
+    domain: str,
+    sort: int = 3,
+    price_min: Optional[int] = None,
+    price_max: Optional[int] = None,
+) -> list[dict]:
+    for impersonate in ("chrome124", "firefox110", "safari15_5"):
+        try:
+            ua = get_random_ua()
+            api_headers = {
+                "User-Agent": ua,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Referer": f"https://{domain}/",
+                "Origin": f"https://{domain}",
+                "x-requested-with": "XMLHttpRequest",
+            }
+
+            payload = {
+                "operationName": "SearchTabs",
+                "query": SEARCH_GRAPHQL,
+                "variables": {"query": query, "count": min(count, 100)},
+            }
+
+            api_url = f"https://{domain}/api-service/graphql"
+            async with AsyncSession() as session:
+                resp = await session.post(
+                    api_url,
+                    json=payload,
+                    headers=api_headers,
+                    impersonate=impersonate,
+                    timeout=20,
+                )
+
+            if resp.status_code != 200:
+                logger.debug("Carousell API %s: HTTP %d", impersonate, resp.status_code)
+                continue
+
+            data = resp.json()
+            listings = (
+                data.get("data", {})
+                .get("search", {})
+                .get("listings", [])
+            )
+
+            if not listings:
+                logger.debug("Carousell API %s: no listings in response", impersonate)
+                continue
+
+            logger.info("Carousell API %s: found %d listings", impersonate, len(listings))
+            return _api_listings_to_items(listings, domain)
+
+        except Exception as e:
+            logger.debug("Carousell API %s error: %s", impersonate, e)
+
+    return []
+
+
+def _api_listings_to_items(listings: list[dict], domain: str) -> list[dict]:
+    items = []
+    for ent in listings:
+        if not isinstance(ent, dict):
+            continue
+        item_id = str(ent.get("id", ""))
+        title = str(ent.get("title", ""))
+        if not item_id or not title:
+            continue
+
+        price_raw = ent.get("price", {})
+        if isinstance(price_raw, dict):
+            price_raw = price_raw.get("amount", "0")
+
+        images_raw = ent.get("images", []) or []
+        images = []
+        for img in images_raw:
+            if isinstance(img, dict):
+                u = img.get("url", "")
+                if u:
+                    images.append(u)
+            elif isinstance(img, str):
+                images.append(img)
+
+        location = str(ent.get("location", "") or "")
+        condition = str(ent.get("condition", "") or "")
+        seller = ent.get("seller", {}) or {}
+        seller_id = str(seller.get("id", "") if isinstance(seller, dict) else "")
+        created_at = str(ent.get("createdAt", "") or "")
+        description = str(ent.get("description", "") or "")
+        slug = ent.get("slug", "") or item_id
+
+        item = {
+            "id": item_id,
+            "title": title,
+            "price": price_raw,
+            "images": images,
+            "seller": seller,
+            "location": location,
+            "condition": condition,
+            "created_at": created_at,
+            "url": f"https://{domain}/p/{slug}",
+            "description": description,
+            "seller_id": seller_id,
+        }
+        items.append(item)
+
+    return items
 
 
 def _apply_price_filter(

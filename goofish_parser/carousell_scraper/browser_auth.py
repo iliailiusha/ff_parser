@@ -27,18 +27,42 @@ class CarousellBrowserAuth:
         url: str,
         timeout: int = 90,
     ) -> tuple[dict[str, str], str]:
+        for browser_type in ("chromium", "firefox"):
+            try:
+                result = await self._try_browser(browser_type, url, timeout)
+                if result:
+                    cookies, html = result
+                    title_line = next((l for l in html.split("\n") if "title" in l.lower()), "")
+                    if "Just a moment" not in title_line:
+                        return result
+                    logger.warning("Carousell %s: Cloudflare still blocking, trying next browser", browser_type)
+            except Exception as e:
+                logger.warning("Carousell %s failed: %s", browser_type, e)
+
+        return {}, ""
+
+    async def _try_browser(
+        self, browser_type: str, url: str, timeout: int
+    ) -> Optional[tuple[dict[str, str], str]]:
         from playwright.async_api import async_playwright
 
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(
-                headless=True,
-                args=[
+            if browser_type == "chromium":
+                launcher = pw.chromium
+                args = [
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-web-security",
                     "--disable-features=IsolateOrigins,site-per-process",
-                ],
+                ]
+            else:
+                launcher = pw.firefox
+                args = ["--no-sandbox"]
+
+            browser = await launcher.launch(
+                headless=True,
+                args=args,
             )
 
             context = await browser.new_context(
@@ -51,25 +75,23 @@ class CarousellBrowserAuth:
                 ignore_https_errors=True,
             )
 
-            await context.add_init_script(STEALTH_JS)
+            if browser_type == "chromium":
+                await context.add_init_script(STEALTH_JS)
 
             page = await context.new_page()
 
             try:
-                logger.info("Carousell browser navigating to %s", url)
+                logger.info("Carousell %s navigating to %s", browser_type, url)
                 await page.goto(url, wait_until="load", timeout=timeout * 1000)
-
                 await page.wait_for_timeout(10000)
 
-                for attempt in range(6):
+                for attempt in range(4):
                     title = await page.title()
                     if "Just a moment" not in title:
-                        logger.info("Carousell browser: Cloudflare passed on attempt %d", attempt + 1)
+                        logger.info("Carousell %s: Cloudflare passed on attempt %d", browser_type, attempt + 1)
                         break
-                    logger.info("Carousell browser: still waiting for Cloudflare (attempt %d)", attempt + 1)
+                    logger.info("Carousell %s: still waiting for Cloudflare (attempt %d)", browser_type, attempt + 1)
                     await page.wait_for_timeout(5000)
-                else:
-                    logger.warning("Carousell browser: Cloudflare still blocking after all attempts")
 
                 raw_cookies = await context.cookies()
                 cookies: dict[str, str] = {}
@@ -82,14 +104,14 @@ class CarousellBrowserAuth:
                 html = await page.content()
 
                 logger.info(
-                    "Carousell browser: got %d cookies, HTML length=%d, title=%s",
-                    len(cookies), len(html), await page.title(),
+                    "Carousell %s: got %d cookies, HTML length=%d, title=%s",
+                    browser_type, len(cookies), len(html), await page.title(),
                 )
                 return cookies, html
 
             except Exception as e:
-                logger.error("Carousell browser auth error: %s", e)
-                raise
+                logger.error("Carousell %s error: %s", browser_type, e)
+                return None
             finally:
                 await page.close()
                 await context.close()
