@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from curl_cffi.requests import AsyncSession
 
+from goofish_parser.carousell_scraper.cookie_manager import CarousellCookieManager
 from goofish_parser.services.user_agent import get_random_ua
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ CAROUSELL_DOMAINS = {
 }
 
 _NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.DOTALL)
+
+_cookie_mgr = CarousellCookieManager()
 
 
 def _parse_next_data(html: str) -> Optional[dict]:
@@ -174,18 +177,9 @@ def _extract_items_from_next_data(data: dict) -> list[dict]:
     return items
 
 
-async def search_carousell(
-    query: str,
-    count: int = 50,
-    country: str = DEFAULT_COUNTRY,
-    sort: int = 3,
-    price_min: Optional[int] = None,
-    price_max: Optional[int] = None,
-) -> list[dict]:
-    domain = CAROUSELL_DOMAINS.get(country, CAROUSELL_DOMAINS[DEFAULT_COUNTRY])
+def _make_headers(domain: str) -> dict[str, str]:
     ua = get_random_ua()
-
-    headers = {
+    return {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
@@ -200,42 +194,98 @@ async def search_carousell(
         "Sec-Fetch-User": "?1",
     }
 
-    params: dict[str, str] = {"q": query}
 
+def _build_params(
+    query: str,
+    sort: int = 3,
+    price_min: Optional[int] = None,
+    price_max: Optional[int] = None,
+) -> dict[str, str]:
+    params: dict[str, str] = {"q": query}
     if price_min is not None:
         params["sp"] = str(price_min)
     if price_max is not None:
         params["ep"] = str(price_max)
-
     if sort == 1:
         params["sort"] = "price_asc"
     elif sort == 2:
         params["sort"] = "price_desc"
     elif sort == 3:
         params["sort"] = "time_created_desc"
+    return params
 
-    search_url = f"https://{domain}/search/"
-    logger.info(f"Carousell search: {search_url} params={params}")
 
+async def _try_curl_cffi(
+    search_url: str,
+    params: dict[str, str],
+    headers: dict[str, str],
+    cookies: dict[str, str],
+) -> Optional[str]:
     try:
         async with AsyncSession() as session:
             resp = await session.get(
                 search_url,
                 params=params,
                 headers=headers,
+                cookies=cookies,
                 impersonate="chrome124",
                 timeout=30,
             )
-        html = resp.text
+        if resp.status_code == 403 or "Just a moment" in resp.text:
+            logger.warning("Carousell curl_cffi blocked by Cloudflare")
+            return None
+        return resp.text
     except Exception as e:
-        logger.error(f"Carousell request error: {e}")
-        return []
+        logger.error(f"Carousell curl_cffi error: {e}")
+        return None
 
-    if resp.status_code == 403 or "Just a moment" in html:
-        logger.warning("Carousell blocked by Cloudflare (403), trying alternate path")
-        return await _search_via_playwright(
-            search_url, params, headers, count, price_min, price_max
-        )
+
+async def _fetch_via_browser(search_url: str, params: dict[str, str]) -> tuple[Optional[str], dict[str, str]]:
+    from goofish_parser.carousell_scraper.browser_auth import CarousellBrowserAuth
+
+    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    full_url = f"{search_url}?{qs}"
+    logger.info("Carousell browser auth: %s", full_url)
+
+    auth = CarousellBrowserAuth()
+    try:
+        cookies, html = await auth.get_cookies_and_html(full_url, timeout=90)
+        _cookie_mgr.save(cookies)
+        return html, cookies
+    except Exception as e:
+        logger.error(f"Carousell browser auth failed: {e}")
+        return None, {}
+
+
+async def search_carousell(
+    query: str,
+    count: int = 50,
+    country: str = DEFAULT_COUNTRY,
+    sort: int = 3,
+    price_min: Optional[int] = None,
+    price_max: Optional[int] = None,
+) -> list[dict]:
+    domain = CAROUSELL_DOMAINS.get(country, CAROUSELL_DOMAINS[DEFAULT_COUNTRY])
+    headers = _make_headers(domain)
+    params = _build_params(query, sort, price_min, price_max)
+    search_url = f"https://{domain}/search/"
+
+    logger.info(f"Carousell search: {search_url} params={params}")
+
+    cookies = _cookie_mgr.load()
+    html = None
+
+    if _cookie_mgr.is_valid(cookies):
+        logger.info("Carousell: trying curl_cffi with saved cookies")
+        html = await _try_curl_cffi(search_url, params, headers, cookies)
+
+    if not html:
+        logger.info("Carousell: fetching via Playwright browser")
+        html, cookies = await _fetch_via_browser(search_url, params)
+
+    if not html:
+        logger.error("Carousell: all methods failed")
+        return []
 
     next_data = _parse_next_data(html)
     if not next_data:
@@ -268,58 +318,3 @@ def _apply_price_filter(
     if price_max is not None:
         result = [i for i in result if _parse_price_val(i.get("price", 0)) <= price_max]
     return result
-
-
-async def _search_via_playwright(
-    url: str,
-    params: dict[str, str],
-    headers: dict[str, str],
-    count: int,
-    price_min: Optional[int],
-    price_max: Optional[int],
-) -> list[dict]:
-    logger.info("Carousell: trying Playwright fallback")
-    for attempt in range(2):
-        try:
-            from playwright.async_api import async_playwright
-
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    user_agent=headers.get("User-Agent", get_random_ua()),
-                    viewport={"width": 1920, "height": 1080},
-                    locale="en-US",
-                    java_script_enabled=True,
-                )
-                page = await context.new_page()
-
-                qs = "&".join(f"{k}={v}" for k, v in params.items())
-                full_url = f"{url}?{qs}"
-
-                await page.goto(full_url, wait_until="load", timeout=90000)
-                await page.wait_for_timeout(8000)
-
-                title = await page.title()
-                if "Just a moment" in title:
-                    logger.warning(f"Carousell Playwright: still blocked by Cloudflare (attempt {attempt + 1}), retrying")
-                    await browser.close()
-                    continue
-
-                html = await page.content()
-                await browser.close()
-
-            next_data = _parse_next_data(html)
-            if not next_data:
-                logger.warning("Carousell Playwright: no __NEXT_DATA__ found")
-                return []
-
-            items = _extract_items_from_next_data(next_data)
-            items = _apply_price_filter(items, price_min, price_max)
-            items = items[:count]
-            logger.info(f"Carousell Playwright: found {len(items)} items")
-            return items
-
-        except Exception as e:
-            logger.error(f"Carousell Playwright error (attempt {attempt + 1}): {e}")
-
-    return []
