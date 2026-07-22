@@ -3,10 +3,9 @@ import logging
 import re
 from typing import Any, Optional
 
-import json as json_mod
-
 from curl_cffi.requests import AsyncSession
 
+from goofish_parser.carousell_scraper import CAROUSELL_UA
 from goofish_parser.carousell_scraper.cookie_manager import CarousellCookieManager
 from goofish_parser.services.user_agent import get_random_ua
 
@@ -180,9 +179,8 @@ def _extract_items_from_next_data(data: dict) -> list[dict]:
 
 
 def _make_headers(domain: str) -> dict[str, str]:
-    ua = get_random_ua()
     return {
-        "User-Agent": ua,
+        "User-Agent": CAROUSELL_UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": f"https://{domain}/",
@@ -194,6 +192,9 @@ def _make_headers(domain: str) -> dict[str, str]:
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "same-origin",
         "Sec-Fetch-User": "?1",
+        "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
     }
 
 
@@ -282,8 +283,14 @@ async def search_carousell(
         html = await _try_curl_cffi(search_url, params, headers, cookies)
 
     if not html:
-        logger.info("Carousell: fetching via Playwright browser")
-        html, cookies = await _fetch_via_browser(search_url, params)
+        logger.info("Carousell: fetching via Xvfb+headed browser (patchright)")
+        browser_html, cookies = await _fetch_via_browser(search_url, params)
+        if browser_html and cookies:
+            logger.info("Carousell: retrying curl_cffi with fresh browser cookies")
+            curl_html = await _try_curl_cffi(search_url, params, headers, cookies)
+            html = curl_html or browser_html
+        else:
+            html = browser_html
 
     if not html:
         logger.info("Carousell: trying GraphQL API fallback")

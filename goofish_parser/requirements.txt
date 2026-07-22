@@ -12,9 +12,6 @@ redis>=5.0
 # Smart search
 rapidfuzz>=3.9
 
-# Optional: semantic search (uncomment if needed)
-# sentence-transformers>=3.0
-
 # H5 Scraper (public share pages, no auth)
 aiohttp>=3.9
 beautifulsoup4>=4.12
@@ -22,3 +19,9 @@ lxml>=5.1
 aiofiles>=23.2
 aiosqlite>=0.20
 playwright>=1.50
+
+# Cloudflare bypass with headed browser on Xvfb
+patchright>=1.50
+
+# Optional: semantic search (uncomment if needed)
+# sentence-transformers>=3.0

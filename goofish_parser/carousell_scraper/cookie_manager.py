@@ -9,7 +9,7 @@ from goofish_parser.config import DATA_DIR
 logger = logging.getLogger(__name__)
 
 COOKIE_FILE = DATA_DIR / "carousell_cookies.json"
-MAX_AGE = timedelta(hours=2)
+MAX_AGE = timedelta(hours=4)
 
 
 class CarousellCookieManager:
