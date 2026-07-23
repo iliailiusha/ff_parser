@@ -72,6 +72,16 @@ H5_TIMEOUT = int(os.getenv("H5_TIMEOUT", "30"))
 # Максимум конкурентных запросов
 H5_CONCURRENCY = int(os.getenv("H5_CONCURRENCY", "5"))
 
+# ──────────────────────────────────────────
+# Carousell Scraper
+# ──────────────────────────────────────────
+CAROUSELL_PROXIES = [
+    p.strip() for p in os.getenv("CAROUSELL_PROXIES", os.getenv("H5_PROXIES", "")).split(",") if p.strip()
+]
+CAROUSELL_PROXY_ROTATION = os.getenv("CAROUSELL_PROXY_ROTATION", os.getenv("H5_PROXY_ROTATION", "roundrobin"))
+CAROUSELL_TIMEOUT = int(os.getenv("CAROUSELL_TIMEOUT", "90"))
+CAROUSELL_HEADLESS = os.getenv("CAROUSELL_HEADLESS", "false").lower() == "true"
+
 # Куда сохранять результаты: "csv", "sqlite" или "both"
 H5_OUTPUT = os.getenv("H5_OUTPUT", "both")
 
