@@ -551,39 +551,30 @@ async def search_all_platforms(
             trans_words = [w for w in translated_model.split() if len(w) > 1 and w not in orig_words]
             trans_norm = _normalize_text(translated_model) if translated_model != model_lower else ""
             trans_compact = _compact_text(translated_model) if translated_model != model_lower else ""
-
-            def _model_matches(item: GoofishItem) -> bool:
-                text_lower = _get_item_text(item)
+            model_filtered: list[GoofishItem] = []
+            for i in items_combined:
+                text_lower = _get_item_text(i)
                 text_norm = _normalize_text(text_lower)
                 text_compact = _compact_text(text_lower)
                 # 1) All original words in combined text
                 if all(w in text_lower for w in orig_words):
-                    return True
+                    model_filtered.append(i)
                 # 2) All translated words in combined text
-                if trans_words and all(w in text_lower for w in trans_words):
-                    return True
+                elif trans_words and all(w in text_lower for w in trans_words):
+                    model_filtered.append(i)
                 # 3) Normalized match (e.g. "GT-2160" matches "gt 2160" in title)
-                if orig_norm and orig_norm in text_norm:
-                    return True
-                if trans_norm and trans_norm in text_norm:
-                    return True
+                elif orig_norm and orig_norm in text_norm:
+                    model_filtered.append(i)
+                elif trans_norm and trans_norm in text_norm:
+                    model_filtered.append(i)
                 # 4) Compact match (e.g. "GT-2160" matches "gt2160" in title)
-                if orig_compact and orig_compact in text_compact:
-                    return True
-                if trans_compact and trans_compact in text_compact:
-                    return True
-                # 5) Fuzzy: partial ratio on normalized text
-                if fuzz.partial_ratio(orig_norm, text_norm) > 75:
-                    return True
-                return False
-
-            model_filtered = [i for i in items_combined if _model_matches(i)]
-            # Fallback: if model filter kills 100%, return pre-filter items with a warning
-            if not model_filtered and model_before > 0:
-                logger.warning(f"[{platform}] Model filter killed ALL {model_before} items — returning unfiltered with lower confidence")
-                items_combined = items_combined
-            else:
-                items_combined = model_filtered
+                elif orig_compact and orig_compact in text_compact:
+                    model_filtered.append(i)
+                elif trans_compact and trans_compact in text_compact:
+                    model_filtered.append(i)
+                else:
+                    logger.debug(f"Model filter removed [{platform}] {i.title} (missing model)")
+            items_combined = model_filtered
             logger.info(f"Model filter [{platform}]: {len(items_combined)}/{model_before} kept")
 
         return items_combined
