@@ -4,17 +4,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from goofish_parser.config import DATA_DIR
+from goofish_parser.config import DATA_DIR, CAROUSELL_COOKIE_MAX_AGE_H
 
 logger = logging.getLogger(__name__)
 
 COOKIE_FILE = DATA_DIR / "carousell_cookies.json"
-MAX_AGE = timedelta(hours=4)
 
 
 class CarousellCookieManager:
-    def __init__(self, path: Optional[Path] = None) -> None:
+    def __init__(self, path: Optional[Path] = None, max_age_h: float = CAROUSELL_COOKIE_MAX_AGE_H) -> None:
         self._path = path or COOKIE_FILE
+        self._max_age = timedelta(hours=max_age_h)
 
     def load(self) -> dict[str, str]:
         if not self._path.exists():
@@ -48,13 +48,17 @@ class CarousellCookieManager:
         if "cf_clearance" not in cookies:
             logger.debug("Missing cf_clearance cookie")
             return False
-        if self._path.exists():
-            mtime = datetime.fromtimestamp(self._path.stat().st_mtime)
-            age = datetime.now() - mtime
-            if age > MAX_AGE:
-                logger.info("Carousell cookies expired (%s old)", age)
-                return False
+        age = self.get_age()
+        if age is not None and age > self._max_age:
+            logger.info("Carousell cookies expired (%s old)", age)
+            return False
         return True
+
+    def get_age(self) -> Optional[timedelta]:
+        if not self._path.exists():
+            return None
+        mtime = datetime.fromtimestamp(self._path.stat().st_mtime)
+        return datetime.now() - mtime
 
     def clear(self) -> None:
         if self._path.exists():

@@ -105,8 +105,9 @@ class ResilientParser:
         platform: str,
         primary: Callable[..., Awaitable[ParserResult]],
         fallbacks: list[Callable[..., Awaitable[ParserResult]]] = None,
-        max_retries: int = 3,
+        max_retries: int = 2,
         base_delay: float = 1.0,
+        timeout: float = 60.0,
         circuit_breaker_config: dict = None,
     ):
         self.platform = platform
@@ -114,6 +115,7 @@ class ResilientParser:
         self.fallbacks = fallbacks or []
         self.max_retries = max_retries
         self.base_delay = base_delay
+        self.timeout = timeout
         self.circuit_breaker = CircuitBreaker(
             name=platform,
             **(circuit_breaker_config or {}),
@@ -134,7 +136,7 @@ class ResilientParser:
             try:
                 result = await asyncio.wait_for(
                     self.primary(*args, **kwargs),
-                    timeout=180.0,
+                    timeout=self.timeout,
                 )
                 if not result.error:
                     return result
@@ -152,7 +154,7 @@ class ResilientParser:
         for i, fallback in enumerate(self.fallbacks):
             try:
                 logger.info(f"[{self.platform}] Trying fallback #{i+1}")
-                result = await asyncio.wait_for(fallback(*args, **kwargs), timeout=120.0)
+                result = await asyncio.wait_for(fallback(*args, **kwargs), timeout=self.timeout)
                 if not result.error:
                     result.fallback_used = True
                     return result

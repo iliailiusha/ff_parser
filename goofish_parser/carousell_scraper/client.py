@@ -26,7 +26,7 @@ async def search_carousell(
     price_max: Optional[int] = None,
 ) -> list[dict]:
     logger.info(
-        "Carousell search via Playwright: query='%s', count=%d, country=%s",
+        "Carousell search (API first, Playwright fallback): query='%s', count=%d, country=%s",
         query, count, country,
     )
 
