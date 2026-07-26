@@ -398,30 +398,30 @@ def _deduplicate(items: list[GoofishItem]) -> list[GoofishItem]:
     return result
 
 
-def _convert_price(price: Optional[float], from_currency: str, to_currency: str) -> Optional[float]:
+async def _convert_price(price: Optional[float], from_currency: str, to_currency: str) -> Optional[float]:
     if price is None or from_currency == to_currency:
         return price
     if from_currency == "RUB" and to_currency == "KRW":
-        rate = get_krw_to_rub()
+        rate = await get_krw_to_rub()
         return round(price / rate) if rate else price
     if from_currency == "RUB" and to_currency == "JPY":
-        rate = get_jpy_to_rub()
+        rate = await get_jpy_to_rub()
         return round(price / rate) if rate else price
     if from_currency == "RUB" and to_currency == "SGD":
-        rate = get_sgd_to_rub()
+        rate = await get_sgd_to_rub()
         return round(price / rate) if rate else price
     if from_currency == "RUB" and to_currency == "CNY":
-        rate = get_cny_to_rub()
+        rate = await get_cny_to_rub()
         return round(price / rate) if rate else price
     if from_currency == "KRW" and to_currency == "JPY":
-        krw_rate = get_krw_to_rub()
-        jpy_rate = get_jpy_to_rub()
+        krw_rate = await get_krw_to_rub()
+        jpy_rate = await get_jpy_to_rub()
         if krw_rate and jpy_rate:
             return round(price * krw_rate / jpy_rate)
         return price
     if from_currency == "KRW" and to_currency == "SGD":
-        krw_rate = get_krw_to_rub()
-        sgd_rate = get_sgd_to_rub()
+        krw_rate = await get_krw_to_rub()
+        sgd_rate = await get_sgd_to_rub()
         if krw_rate and sgd_rate:
             return round(price * krw_rate / sgd_rate)
         return price
@@ -441,13 +441,14 @@ async def search_all_platforms(
     enabled = get_enabled_platforms(user_id)
 
     async def _search_one(platform: str) -> list[GoofishItem]:
+        timeout = 15.0 if platform == "carousell" else 180.0
         try:
             return await asyncio.wait_for(
                 _do_search_one(platform),
-                timeout=180.0,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("Search timeout on %s (180s)", platform)
+            logger.warning("Search timeout on %s (%ss)", platform, timeout)
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
@@ -461,8 +462,8 @@ async def search_all_platforms(
         translated_type = _translate_type(item_type_ru, lang)
         mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
         plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
-        plat_price_min = _convert_price(price_min, price_currency, plat_currency)
-        plat_price_max = _convert_price(price_max, price_currency, plat_currency)
+        plat_price_min = await _convert_price(price_min, price_currency, plat_currency)
+        plat_price_max = await _convert_price(price_max, price_currency, plat_currency)
 
         async def _search(q: str, pass_as_item_type: bool = True) -> list[GoofishItem]:
             try:
@@ -635,13 +636,14 @@ async def search_all_platforms_free_text(
             clothing_types_found.append(ru_word)
 
     async def _search_one(platform: str) -> list[GoofishItem]:
+        timeout = 15.0 if platform == "carousell" else 180.0
         try:
             return await asyncio.wait_for(
                 _do_search_one(platform),
-                timeout=180.0,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("Search timeout on %s (180s)", platform)
+            logger.warning("Search timeout on %s (%ss)", platform, timeout)
             return []
         except Exception as e:
             logger.error(f"Search error on {platform}: {e}")
@@ -653,8 +655,8 @@ async def search_all_platforms_free_text(
             return []
         mod = __import__(searcher_mod, fromlist=["search_by_brand_type"])
         plat_currency = PLATFORM_CURRENCY.get(platform, "KRW")
-        plat_price_min = _convert_price(price_min, price_currency, plat_currency)
-        plat_price_max = _convert_price(price_max, price_currency, plat_currency)
+        plat_price_min = await _convert_price(price_min, price_currency, plat_currency)
+        plat_price_max = await _convert_price(price_max, price_currency, plat_currency)
 
         # Translate clothing types in query for this platform's language
         lang = PLATFORM_LANG.get(platform, "en")

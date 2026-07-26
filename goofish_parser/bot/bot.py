@@ -43,7 +43,7 @@ def _start_health_server():
 
 
 async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
-    rate = update_rate_daily()
+    rate = await update_rate_daily()
     logger.info(f"Daily KRW rate update: {rate:.4f} RUB")
 
 

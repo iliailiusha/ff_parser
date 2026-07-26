@@ -230,24 +230,31 @@ async def init_parser_registry() -> ParserRegistry:
     from goofish_parser.services.multi_search import PLATFORM_CURRENCY, PLATFORM_LANG, _translate_type
     from goofish_parser.services.exchange_rate import get_krw_to_rub, get_jpy_to_rub, get_sgd_to_rub, get_cny_to_rub
 
-    def _convert_price(price: Optional[float], from_curr: str, to_curr: str) -> Optional[float]:
+    async def _convert_price(price: Optional[float], from_curr: str, to_curr: str) -> Optional[float]:
         if price is None or from_curr == to_curr:
             return price
-        rates = {
-            ("KRW", "JPY"): lambda: get_krw_to_rub() / get_jpy_to_rub(),
-            ("KRW", "SGD"): lambda: get_krw_to_rub() / get_sgd_to_rub(),
-            ("KRW", "CNY"): lambda: get_krw_to_rub() / get_cny_to_rub(),
-            ("RUB", "KRW"): lambda: price / get_krw_to_rub() if get_krw_to_rub() else price,
-            ("RUB", "JPY"): lambda: price / get_jpy_to_rub() if get_jpy_to_rub() else price,
-            ("RUB", "SGD"): lambda: price / get_sgd_to_rub() if get_sgd_to_rub() else price,
-            ("RUB", "CNY"): lambda: price / get_cny_to_rub() if get_cny_to_rub() else price,
-        }
-        key = (from_curr, to_curr)
-        if key in rates:
-            try:
-                return rates[key]()
-            except Exception:
-                pass
+        try:
+            krw = await get_krw_to_rub()
+            jpy = await get_jpy_to_rub()
+            sgd = await get_sgd_to_rub()
+            cny = await get_cny_to_rub()
+            key = (from_curr, to_curr)
+            if key == ("KRW", "JPY") and krw and jpy:
+                return krw / jpy
+            if key == ("KRW", "SGD") and krw and sgd:
+                return krw / sgd
+            if key == ("KRW", "CNY") and krw and cny:
+                return krw / cny
+            if key == ("RUB", "KRW"):
+                return price / krw if krw else price
+            if key == ("RUB", "JPY"):
+                return price / jpy if jpy else price
+            if key == ("RUB", "SGD"):
+                return price / sgd if sgd else price
+            if key == ("RUB", "CNY"):
+                return price / cny if cny else price
+        except Exception:
+            pass
         return price
 
     async def _wrap_search(search_func, platform: str):
@@ -263,8 +270,8 @@ async def init_parser_registry() -> ParserRegistry:
         ) -> ParserResult:
             try:
                 plat_curr = PLATFORM_CURRENCY.get(platform, "KRW")
-                plat_price_min = _convert_price(price_min, price_currency, plat_curr)
-                plat_price_max = _convert_price(price_max, price_currency, plat_curr)
+                plat_price_min = await _convert_price(price_min, price_currency, plat_curr)
+                plat_price_max = await _convert_price(price_max, price_currency, plat_curr)
 
                 queries = [_translate_type(item_type_ru, PLATFORM_LANG.get(platform, "en"))]
                 if model:

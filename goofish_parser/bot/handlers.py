@@ -15,7 +15,7 @@ from goofish_parser.bot.messages import format_search_result, HELP_TEXT
 from goofish_parser.bot.keyboards import build_brand_keyboard, build_type_keyboard, build_price_keyboard, build_model_keyboard
 from goofish_parser.bot.translation import CLOTHING_RU_TO_KO
 from goofish_parser.ff_scraper.search import search_products_free_text
-from goofish_parser.services.multi_search import search_all_platforms, search_all_platforms_free_text, merge_platform_results
+from goofish_parser.services.multi_search import search_all_platforms, search_all_platforms_free_text, search_all_platforms_smart, merge_platform_results
 from goofish_parser.services.exchange_rate import get_krw_to_rub, get_rate_to_rub
 from goofish_parser.services.rate_limit import get_search_limiter, get_rate_limiter
 from goofish_parser.services.validators import FindInput, SearchInput
@@ -207,7 +207,12 @@ async def on_brand_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             reply_markup=build_brand_keyboard(user_id=user_id),
         )
         return BRAND_SELECT
-    brand = text
+    try:
+        validated = SearchInput(brand=text, item_type="")
+    except ValueError as e:
+        await update.message.reply_text(f"❌ {e}. Попробуй снова:")
+        return BRAND_INPUT
+    brand = validated.brand
     context.user_data["brand"] = brand
     await update.message.reply_text(
         f"Бренд: *{brand}*\n\nТеперь выбери тип одежды:",
@@ -383,7 +388,9 @@ async def on_price_min(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return PRICE_SELECT
     try:
-        context.user_data["price_min"] = float(text)
+        price_val = float(text)
+        validated = SearchInput(brand="x", price_min=price_val)
+        context.user_data["price_min"] = validated.price_min
     except ValueError:
         await update.message.reply_text("❌ Введи число. Попробуй снова:")
         return PRICE_INPUT_MIN
@@ -420,7 +427,9 @@ async def on_price_max(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return PRICE_INPUT_MIN
     else:
         try:
-            context.user_data["price_max"] = float(text)
+            price_val = float(text)
+            validated = SearchInput(brand="x", price_max=price_val)
+            context.user_data["price_max"] = validated.price_max
         except ValueError:
             await update.message.reply_text("❌ Введи число или /skip:")
             return PRICE_INPUT_MAX
@@ -542,7 +551,13 @@ async def on_model_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             reply_markup=build_price_keyboard(find_mode=is_find),
         )
         return PRICE_SELECT
-    context.user_data["model"] = text
+    try:
+        validated = SearchInput(brand=context.user_data.get("brand", "x"), model=text)
+        model = validated.model
+    except ValueError as e:
+        await update.message.reply_text(f"❌ {e}. Попробуй снова:")
+        return MODEL_SELECT
+    context.user_data["model"] = model
     msg = await update.message.reply_text("🔍 Ищу...")
     return await execute_search(update, context, msg, gen=gen)
 
@@ -648,7 +663,7 @@ async def execute_search(
         save_items(all_items, label)
 
         market = calculate_market_price(all_items)
-        scored = score_items(all_items, market)
+        scored = await score_items(all_items, market)
 
         save_scored_items(scored)
         text = format_search_result(scored, brand, type_ru, platform_summary)
@@ -667,7 +682,7 @@ async def execute_search(
             if cancelled():
                 return ConversationHandler.END
             item = s.item
-            rate = get_rate_to_rub(item.currency)
+            rate = await get_rate_to_rub(item.currency)
             source_name = _source_tag(item)
             if item.alt_sources:
                 source_name += "+" + "+".join(item.alt_sources)
@@ -820,7 +835,7 @@ async def _show_find_page(
     for item in batch:
         if cancelled():
             return
-        rate = get_rate_to_rub(item.currency)
+        rate = await get_rate_to_rub(item.currency)
         price_rub = round(item.price_cny * rate)
         discount = ""
         if item.price_original_cny and item.price_original_cny > item.price_cny:
@@ -959,9 +974,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    krw_rate = get_krw_to_rub()
-    sgd_rate = get_rate_to_rub("SGD")
-    jpy_rate = get_rate_to_rub("JPY")
+    krw_rate = await get_krw_to_rub()
+    sgd_rate = await get_rate_to_rub("SGD")
+    jpy_rate = await get_rate_to_rub("JPY")
 
     lines = [
         "💱 *Курсы валют к RUB*\n",

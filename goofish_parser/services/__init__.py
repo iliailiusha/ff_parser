@@ -1,6 +1,7 @@
 from goofish_parser.services.multi_search import (
     search_all_platforms,
     search_all_platforms_free_text,
+    search_all_platforms_smart,
     merge_platform_results,
 )
 from goofish_parser.services.exchange_rate import (

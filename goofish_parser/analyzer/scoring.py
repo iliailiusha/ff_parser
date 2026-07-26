@@ -3,17 +3,17 @@ from typing import Optional
 from goofish_parser.scraper.models import GoofishItem, MarketPrice, ScoredItem
 
 
-def _rate(currency: str = "₩") -> float:
+async def _rate(currency: str = "₩") -> float:
     from goofish_parser.services.exchange_rate import get_rate_to_rub
-    return get_rate_to_rub(currency)
+    return await get_rate_to_rub(currency)
 
 
-def score_item(item: GoofishItem, market: MarketPrice) -> Optional[ScoredItem]:
+async def score_item(item: GoofishItem, market: MarketPrice) -> Optional[ScoredItem]:
     if market.avg_price_cny <= 0 or item.price_cny <= 0:
         return None
 
     discount_pct = round((1 - item.price_cny / market.avg_price_cny) * 100, 1)
-    rate = _rate(item.currency)
+    rate = await _rate(item.currency)
 
     return ScoredItem(
         item=item,
@@ -25,7 +25,7 @@ def score_item(item: GoofishItem, market: MarketPrice) -> Optional[ScoredItem]:
     )
 
 
-def score_items(items: list[GoofishItem], market: Optional[MarketPrice] = None) -> list[ScoredItem]:
+async def score_items(items: list[GoofishItem], market: Optional[MarketPrice] = None) -> list[ScoredItem]:
     if not items:
         return []
 
@@ -38,7 +38,7 @@ def score_items(items: list[GoofishItem], market: Optional[MarketPrice] = None) 
 
     scored = []
     for item in items:
-        s = score_item(item, market)
+        s = await score_item(item, market)
         if s:
             scored.append(s)
 
