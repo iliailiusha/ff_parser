@@ -470,7 +470,29 @@ async def _search_playwright(query: str, limit: int = 500) -> list[dict]:
             except Exception:
                 logger.warning("Mercari JP PW: timeout waiting for item links")
 
-            await asyncio.sleep(random.uniform(1, 2))
+            # Scroll to load more items
+            seen_count = 0
+            scroll_attempts = 0
+            max_scroll = 15
+            while scroll_attempts < max_scroll:
+                await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                await asyncio.sleep(random.uniform(0.8, 1.5))
+                current_count = await page.evaluate(
+                    "document.querySelectorAll('a[href*=\"/item/m\"]').length"
+                )
+                if current_count > seen_count:
+                    logger.debug(
+                        "Mercari JP PW scroll %d: items increased %d -> %d",
+                        scroll_attempts + 1, seen_count, current_count,
+                    )
+                    seen_count = current_count
+                    scroll_attempts = 0
+                else:
+                    scroll_attempts += 1
+                if current_count >= limit:
+                    break
+
+            logger.info("Mercari JP PW: after scroll, total items=%d", seen_count)
 
             raw = await page.evaluate(EXTRACT_ITEMS_JS)
             items_data: list[dict] = json.loads(raw) if raw else []

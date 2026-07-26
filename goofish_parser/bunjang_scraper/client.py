@@ -45,16 +45,18 @@ async def search_bunjang(
     all_items: list[dict] = []
     query = re.sub(r"\s+", " ", query.strip())
     no_price_retry_done = False
+    no_stat_retry_done = False
 
     while True:
-        async with httpx.AsyncClient(
-            headers={
-                "User-Agent": get_random_ua(),
-                "Accept": "application/json",
-                "Referer": "https://m.bunjang.co.kr/",
-            },
-            timeout=15,
-        ) as client:
+        retry_just_triggered = False
+        retry_stat_triggered = False
+        headers = {
+            "User-Agent": get_random_ua(),
+            "Accept": "application/json",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+            "Referer": "https://m.bunjang.co.kr/",
+        }
+        async with httpx.AsyncClient(headers=headers, timeout=15) as client:
             for attempt, current_query in _get_search_queries(query, retry_with_korean):
                 if all_items:
                     break
@@ -69,8 +71,9 @@ async def search_bunjang(
                         "page": page,
                         "per": per_page,
                         "order": "date",
-                        "stat": "used",
                     }
+                    if not no_stat_retry_done:
+                        params["stat"] = "used"
                     if not no_price_retry_done:
                         if price_min is not None:
                             params["price_min"] = price_min
@@ -107,7 +110,16 @@ async def search_bunjang(
                                 f"[bunjang] no_result=true with price filter, retrying without price"
                             )
                             no_price_retry_done = True
+                            retry_just_triggered = True
                             break  # break page loop, will restart from outer while
+                        # If no_result without price filter, try removing stat=used
+                        if page == 1 and no_result and not no_stat_retry_done:
+                            logger.info(
+                                f"[bunjang] no_result=true without price, retrying without stat=used"
+                            )
+                            no_stat_retry_done = True
+                            retry_stat_triggered = True
+                            break
                         # If page 1 has no items but num_found > 0, could be pagination issue
                         if page == 1 and num_found and int(num_found) > 0:
                             logger.info(
@@ -127,13 +139,17 @@ async def search_bunjang(
                     all_items.extend(items)
                     time.sleep(0.5)
 
-                if no_price_retry_done and not all_items:
-                    break  # break query loop, will restart without price
+                # Break query loop to restart from outer while
+                if (retry_just_triggered or retry_stat_triggered) and not all_items:
+                    break
 
-        # Restart without price filter if needed; otherwise done
+        # Restart without price filter if needed
         if no_price_retry_done and not all_items and (price_min is not None or price_max is not None):
             price_min = None
             price_max = None
+            continue
+        # If stat=used retry was done and still no items, continue with next query variant
+        if retry_stat_triggered:
             continue
         break
 
