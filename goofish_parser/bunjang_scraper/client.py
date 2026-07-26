@@ -1,5 +1,6 @@
 import logging
 import random
+import re
 import time
 from typing import Any, Optional
 
@@ -42,6 +43,7 @@ async def search_bunjang(
     retry_with_korean: bool = True,
 ) -> list[dict]:
     all_items: list[dict] = []
+    query = re.sub(r"\s+", " ", query.strip())
 
     async with httpx.AsyncClient(
         headers={
@@ -80,15 +82,21 @@ async def search_bunjang(
                     logger.error(f"Bunjang search error (page {page}, query='{current_query}'): {e}")
                     break
 
+                raw_text = resp.text
                 items = data.get("list", [])
-                num_found = data.get("num_found", 0)
+                if not items and isinstance(data.get("data"), dict):
+                    items = data["data"].get("list", [])
+                num_found = data.get("num_found", 0) or (data.get("data") or {}).get("num_found", 0)
                 logger.debug(
                     f"[bunjang] page={page} query='{current_query}' "
                     f"status={resp.status_code} items_count={len(items)} "
-                    f"num_found={num_found} resp_len={len(resp.text)}"
+                    f"num_found={num_found} resp_len={len(raw_text)}"
                 )
 
                 if not items:
+                    logger.debug(
+                        f"[bunjang] Raw response (first 500): {raw_text[:500]}"
+                    )
                     # If page 1 has no items but num_found > 0, could be pagination issue
                     if page == 1 and num_found and int(num_found) > 0:
                         logger.info(
