@@ -464,26 +464,40 @@ async def search_all_platforms(
         plat_price_min = _convert_price(price_min, price_currency, plat_currency)
         plat_price_max = _convert_price(price_max, price_currency, plat_currency)
 
-        async def _search(q: str) -> list[GoofishItem]:
+        async def _search(q: str, pass_as_item_type: bool = True) -> list[GoofishItem]:
             try:
-                result = await mod.search_by_brand_type(
-                    brand=brand,
-                    item_type=q,
-                    price_min=plat_price_min,
-                    price_max=plat_price_max,
-                    limit=limit_per_platform,
-                )
+                if pass_as_item_type:
+                    result = await mod.search_by_brand_type(
+                        brand=brand,
+                        item_type=q,
+                        price_min=plat_price_min,
+                        price_max=plat_price_max,
+                        limit=limit_per_platform,
+                    )
+                else:
+                    result = await mod.search_by_brand_type(
+                        brand=q,
+                        item_type="",
+                        price_min=plat_price_min,
+                        price_max=plat_price_max,
+                        limit=limit_per_platform,
+                    )
                 if result and result.items:
                     return result.items
             except Exception:
                 pass
             return []
 
-        base_query = translated_type
-        if model:
-            base_query = f"{translated_type} {model}".strip()
-
-        items_original = await _search(base_query)
+        # For FruitsFamily: skip translated_type in search when brand+model specified,
+        # because Korean "운동화" can kill AND-matching on items with English titles.
+        if platform == "fruitsfamily" and brand and model:
+            base_query = f"{brand} {model}"
+            items_original = await _search(base_query, pass_as_item_type=False)
+        else:
+            base_query = translated_type
+            if model:
+                base_query = f"{translated_type} {model}".strip()
+            items_original = await _search(base_query, pass_as_item_type=True)
 
         if not items_original:
             return []
