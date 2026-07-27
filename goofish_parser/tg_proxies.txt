@@ -5,3 +5,4 @@
 # After deploying vercel-proxy, add your Vercel URLs here:
 # https://goofish-proxy-1.vercel.app
 # https://goofish-proxy-2.vercel.app
+https://goofish-proxy-theta.vercel.app
