@@ -19,6 +19,11 @@ USD_TO_RUB = float(os.getenv("USD_TO_RUB", "85"))
 
 API_BASE_URL = os.getenv("API_BASE_URL", "")
 
+TG_PROXY_POOL = [
+    p.strip() for p in os.getenv("TG_PROXY_POOL", "").split(",") if p.strip()
+]
+TG_PROXY_CHECK_INTERVAL = int(os.getenv("TG_PROXY_CHECK_INTERVAL", "300"))
+
 _is_hf = bool(os.getenv("SPACE_ID"))
 _storage_dir = os.getenv("STORAGE_DIR", "/data" if _is_hf else str(DATA_DIR))
 DB_PATH = Path(_storage_dir) / "storage.db"
