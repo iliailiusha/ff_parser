@@ -1,0 +1,8 @@
+# Telegram API proxy list
+# One proxy URL per line, lines starting with # are ignored
+# Each proxy must serve Telegram Bot API at /api/bot{token}/...
+#
+# Example:
+# https://goofish-proxy-1.vercel.app
+# https://goofish-proxy-2.vercel.app
+# https://goofish-proxy-3.vercel.app
