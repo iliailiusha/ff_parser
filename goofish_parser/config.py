@@ -26,13 +26,13 @@ os.makedirs(str(DB_PATH.parent), exist_ok=True)
 
 # Redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_DEFAULT_TTL = int(os.getenv("REDIS_DEFAULT_TTL", "300"))
+REDIS_DEFAULT_TTL = int(os.getenv("REDIS_DEFAULT_TTL", "900"))
 
 # Rate limiting
-RATE_LIMIT_DEFAULT_RATE = float(os.getenv("RATE_LIMIT_DEFAULT_RATE", "1.0"))
-RATE_LIMIT_DEFAULT_BURST = int(os.getenv("RATE_LIMIT_DEFAULT_BURST", "3"))
-SEARCH_RATE_LIMIT_WINDOW = int(os.getenv("SEARCH_RATE_LIMIT_WINDOW", "60"))
-SEARCH_RATE_LIMIT_MAX = int(os.getenv("SEARCH_RATE_LIMIT_MAX", "10"))
+RATE_LIMIT_DEFAULT_RATE = float(os.getenv("RATE_LIMIT_DEFAULT_RATE", "0.5"))
+RATE_LIMIT_DEFAULT_BURST = int(os.getenv("RATE_LIMIT_DEFAULT_BURST", "2"))
+SEARCH_RATE_LIMIT_WINDOW = int(os.getenv("SEARCH_RATE_LIMIT_WINDOW", "120"))
+SEARCH_RATE_LIMIT_MAX = int(os.getenv("SEARCH_RATE_LIMIT_MAX", "5"))
 
 # Circuit breaker
 CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5"))
@@ -76,24 +76,10 @@ H5_CONCURRENCY = int(os.getenv("H5_CONCURRENCY", "5"))
 # Carousell Scraper
 # ──────────────────────────────────────────
 CAROUSELL_PROXIES = [
-    p.strip() for p in os.getenv("CAROUSELL_PROXIES", os.getenv("H5_PROXIES", "")).split(",") if p.strip()
+    p.strip() for p in os.getenv("CAROUSELL_PROXIES", "").split(",") if p.strip()
 ]
-CAROUSELL_PROXY_ROTATION = os.getenv("CAROUSELL_PROXY_ROTATION", os.getenv("H5_PROXY_ROTATION", "roundrobin"))
-CAROUSELL_TIMEOUT = int(os.getenv("CAROUSELL_TIMEOUT", "30"))
-CAROUSELL_HEADLESS = os.getenv("CAROUSELL_HEADLESS", "true").lower() == "true"
-
-# Maximum number of browser launch rounds (each round = new browser session)
-CAROUSELL_MAX_ROUNDS = int(os.getenv("CAROUSELL_MAX_ROUNDS", "3"))
-# Max CF check iterations per round before fast-fail
-CAROUSELL_MAX_CF_ATTEMPTS = int(os.getenv("CAROUSELL_MAX_CF_ATTEMPTS", "5"))
-# Exponential backoff base (seconds) between rounds
-CAROUSELL_CF_BACKOFF_BASE = float(os.getenv("CAROUSELL_CF_BACKOFF_BASE", "2.0"))
-# Proxy timeout (seconds) — if a proxy fails, mark it dead
-CAROUSELL_PROXY_TIMEOUT = int(os.getenv("CAROUSELL_PROXY_TIMEOUT", "15"))
-# Cookie max age (hours)
-CAROUSELL_COOKIE_MAX_AGE_H = float(os.getenv("CAROUSELL_COOKIE_MAX_AGE_H", "4"))
-# Extra HTTP headers injected into the browser context (JSON dict)
 CAROUSELL_EXTRA_HEADERS_JSON = os.getenv("CAROUSELL_EXTRA_HEADERS", "{}")
+CAROUSELL_COOKIE_MAX_AGE_H = float(os.getenv("CAROUSELL_COOKIE_MAX_AGE_H", "4"))
 
 # Куда сохранять результаты: "csv", "sqlite" или "both"
 H5_OUTPUT = os.getenv("H5_OUTPUT", "both")

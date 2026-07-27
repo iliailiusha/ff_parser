@@ -441,7 +441,7 @@ async def search_all_platforms(
     enabled = get_enabled_platforms(user_id)
 
     async def _search_one(platform: str) -> list[GoofishItem]:
-        timeout = 15.0 if platform == "carousell" else 180.0
+        timeout = 10.0 if platform == "carousell" else 180.0
         try:
             return await asyncio.wait_for(
                 _do_search_one(platform),
@@ -636,7 +636,7 @@ async def search_all_platforms_free_text(
             clothing_types_found.append(ru_word)
 
     async def _search_one(platform: str) -> list[GoofishItem]:
-        timeout = 15.0 if platform == "carousell" else 180.0
+        timeout = 10.0 if platform == "carousell" else 180.0
         try:
             return await asyncio.wait_for(
                 _do_search_one(platform),
