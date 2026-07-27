@@ -13,17 +13,42 @@ TELEGRAM_API = "https://api.telegram.org"
 
 
 class ProxyPool:
-    def __init__(self, proxy_urls: list[str], bot_token: str, check_interval: int = 300):
-        self._urls = proxy_urls
+    def __init__(
+        self,
+        proxy_urls: list[str],
+        bot_token: str,
+        check_interval: int = 300,
+        proxy_file: str = "",
+    ):
+        self._static_urls = proxy_urls
         self._token = bot_token
         self._check_interval = check_interval
+        self._proxy_file = proxy_file
         self._working: list[tuple[str, float]] = []
         self._current_idx = 0
         self._lock = asyncio.Lock()
         self._task: Optional[asyncio.Task] = None
 
+    def _load_urls(self) -> list[str]:
+        if self._proxy_file:
+            try:
+                urls = []
+                with open(self._proxy_file, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            urls.append(line)
+                if urls:
+                    return urls
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.warning("Failed to read proxy file %s: %s", self._proxy_file, e)
+        return self._static_urls
+
     async def start(self):
-        if not self._urls:
+        urls = self._load_urls()
+        if not urls:
             logger.info("Proxy pool: no proxies configured")
             return
         await self._check_all()
@@ -38,10 +63,17 @@ class ProxyPool:
                 pass
 
     async def _check_all(self):
+        urls = self._load_urls()
+        if not urls:
+            async with self._lock:
+                self._working = []
+                self._current_idx = 0
+            return
+
         results = []
         timeout = httpx.Timeout(10, connect=5)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            for url in self._urls:
+            for url in urls:
                 start = time.monotonic()
                 try:
                     resp = await client.get(
@@ -62,11 +94,11 @@ class ProxyPool:
             logger.info(
                 "Proxy pool: %d/%d working (best %.0fms)",
                 len(results),
-                len(self._urls),
+                len(urls),
                 results[0][1],
             )
-        elif self._urls:
-            logger.warning("Proxy pool: all %d proxies dead", len(self._urls))
+        elif urls:
+            logger.warning("Proxy pool: all %d proxies dead", len(urls))
 
     async def _periodic_check(self):
         try:

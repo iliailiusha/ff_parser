@@ -23,6 +23,7 @@ TG_PROXY_POOL = [
     p.strip() for p in os.getenv("TG_PROXY_POOL", "").split(",") if p.strip()
 ]
 TG_PROXY_CHECK_INTERVAL = int(os.getenv("TG_PROXY_CHECK_INTERVAL", "300"))
+TG_PROXY_FILE = os.getenv("TG_PROXY_FILE", "")
 
 _is_hf = bool(os.getenv("SPACE_ID"))
 _storage_dir = os.getenv("STORAGE_DIR", "/data" if _is_hf else str(DATA_DIR))

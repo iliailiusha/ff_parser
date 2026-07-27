@@ -9,7 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL, TG_PROXY_POOL, TG_PROXY_CHECK_INTERVAL
+from goofish_parser.config import TELEGRAM_BOT_TOKEN, API_BASE_URL, TG_PROXY_POOL, TG_PROXY_CHECK_INTERVAL, TG_PROXY_FILE
 from goofish_parser.services.proxy_pool import ProxyPool, ProxyPoolRequest
 from telegram.ext import CallbackQueryHandler
 from goofish_parser.bot.handlers import search_conversation, recent_command, help_command, rate_command, status_command, find_nav_callback
@@ -49,7 +49,7 @@ async def daily_rate_update(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def _build_app():
-    pool = ProxyPool(TG_PROXY_POOL, TELEGRAM_BOT_TOKEN, TG_PROXY_CHECK_INTERVAL)
+    pool = ProxyPool(TG_PROXY_POOL, TELEGRAM_BOT_TOKEN, TG_PROXY_CHECK_INTERVAL, proxy_file=TG_PROXY_FILE)
 
     async def _post_init(app: Application) -> None:
         # Initialize rate limiters
@@ -95,9 +95,10 @@ def _build_app():
 
     builder = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(_post_init).post_shutdown(_post_shutdown)
 
-    if TG_PROXY_POOL:
+    if TG_PROXY_POOL or TG_PROXY_FILE:
         builder.request(ProxyPoolRequest(pool))
-        logger.info("Telegram proxy pool: %d proxies", len(TG_PROXY_POOL))
+        src = TG_PROXY_FILE if TG_PROXY_FILE else f"env ({len(TG_PROXY_POOL)} proxies)"
+        logger.info("Telegram proxy pool: %s", src)
     elif API_BASE_URL:
         base = API_BASE_URL.strip().rstrip("/")
         if not base.startswith(("http://", "https://")):
